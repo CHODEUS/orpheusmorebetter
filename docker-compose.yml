@@ -13,4 +13,4 @@ services:
     # Since this is a task runner, not a daemon, you'll typically run it manually
     # Remove the command below to run interactively
     command: --help
-    restart: "yes"
+    restart: "no"
