@@ -13,21 +13,6 @@ mkdir -p /config
 # This will change ownership of a host-mounted volume if the container runs as root.
 chown -R orpheus:orpheus /config 2>/dev/null || true
 
-# Create default config if missing (keeps original behavior)
-if [ ! -f /config/config.yaml ]; then
-    echo "📝 No config.yaml found in /config — creating default..."
-    if [ -f /app/config.example.yaml ]; then
-        cp /app/config.example.yaml /config/config.yaml
-    elif [ -f /app/config.yaml ]; then
-        cp /app/config.yaml /config/config.yaml
-    else
-        echo "# Default OrpheusMoreBetter config" > /config/config.yaml
-        echo "log_level: INFO" >> /config/config.yaml
-        echo "api_key: ''" >> /config/config.yaml
-        echo "server_url: 'https://example.com'" >> /config/config.yaml
-    fi
-fi
-
 # Print version info
 if [ -d .git ]; then
     GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
