@@ -8,9 +8,10 @@ echo "🔄 Starting OrpheusMoreBetter..."
 # Ensure config directory exists
 mkdir -p /config
 
-# If config is owned by the wrong user, correct it (99:100).
+# If config is owned by the wrong user, correct it (orpheus:orpheus / 99:99).
 # Ignore failures if container not privileged to change ownership.
-chown -R 99:100 /config 2>/dev/null || true
+# This will change ownership of a host-mounted volume if the container runs as root.
+chown -R orpheus:orpheus /config 2>/dev/null || true
 
 # Create default config if missing (keeps original behavior)
 if [ ! -f /config/config.yaml ]; then
