@@ -6,7 +6,6 @@ services:
     container_name: orpheusmorebetter
     volumes:
       - ./config:/config
-      - ./cache:/cache
       - /path/to/your/flac/files:/data:ro
       - /path/to/output:/output
       - /path/to/watch/folder:/torrents
