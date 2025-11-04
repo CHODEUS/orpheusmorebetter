@@ -66,7 +66,6 @@ docker run --rm \
 ```bash
 docker run --rm \
   -v ~/orpheus/config:/config \
-  -v ~/orpheus/cache:/cache \
   -v /path/to/flacs:/data:ro \
   -v /path/to/output:/output \
   -v /path/to/watch:/torrents \
@@ -141,6 +140,31 @@ docker run --rm ... chodeus/orpheusmorebetter:latest -t 123456
 
 Since this is a task-based container (not a daemon), you'll run it via container start. The container will stop when it is complete.
 
+### 3. Config and Container exmaple
+
+It should look something like this
+```
+[orpheus]
+username = Myusername
+password = Mytorrentsitepassword
+data_dir = /data
+output_dir = /data
+torrent_dir = /torrents
+formats = flac, v0, 320
+media = cd, vinyl, web
+24bit_behaviour = 0
+tracker = https://home.opsfet.ch/
+mode = both
+api = https://orpheus.network/
+source = OPS
+```
+Inside the container
+
+```
+/mnt/user/data/torrents/music/:/data \
+/mnt/user/data/torrents/rips:/torrents \
+/path/to/output:/output \ <- I dont have this, I use /data location in my config but it can be configured to a different folder. Just change output_dir above to /output.
+  ```
 
 ## Environment Variables
 
