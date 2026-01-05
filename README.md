@@ -2,7 +2,8 @@
 
 Docker container for [orpheusmorebetter](https://github.com/CHODEUS/orpheusmorebetter) - automatic transcode uploader for Orpheus.
 
-This is a Docker implementation of the orpheusmorebetter script.
+This is a vibe coded docker implementation of the orpheusmorebetter script.
+It was built for personal use but feel free to use it at your own risk. 
 
 ## Features
 
