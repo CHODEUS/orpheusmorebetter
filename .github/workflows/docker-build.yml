@@ -1,0 +1,60 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [ master ] # Removed 'main'
+    paths:
+      - 'Dockerfile'
+      - 'src/**'
+      - '**.py'
+      - 'requirements.txt'
+      - 'package*.json'
+      - '.github/workflows/docker-build.yml'
+      - '!README.md'
+      - '!*.md'
+  pull_request:
+    branches: [ master ] # Removed 'main'
+    paths:
+      - 'Dockerfile'
+      - 'src/**'
+      - '**.py'
+      - 'requirements.txt'
+      - 'package*.json'
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: chodeus/orpheusmorebetter # Ensure repository name is lowercase
+        tags: |
+          type=raw,value=latest
+          type=sha,prefix=${{ github.ref_name }}- # Correct use of branch name
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=registry,ref=chodeus/orpheusmorebetter:latest
+        cache-to: type=inline
