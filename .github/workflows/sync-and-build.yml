@@ -32,7 +32,7 @@ jobs:
             git merge upstream/master --allow-unrelated-histories -m "chore: sync with upstream repository
             
             Automatically synced with walkrflocka/orpheusmorebetter"
-            git push origin main
+            git push origin master
             echo "updated=true" >> $GITHUB_OUTPUT
           else
             echo "Already up to date"
