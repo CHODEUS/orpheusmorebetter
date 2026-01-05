@@ -32,13 +32,25 @@ jobs:
           
           if [ "$LOCAL" != "$REMOTE" ]; then
             echo "Changes detected, syncing..."
-            git merge upstream/main --allow-unrelated-histories
+            git merge upstream/main --allow-unrelated-histories -m "chore: sync with upstream repository
+            
+            Automatically synced with walkrflocka/orpheusmorebetter"
             git push origin main
             echo "updated=true" >> $GITHUB_OUTPUT
           else
             echo "Already up to date"
             echo "updated=false" >> $GITHUB_OUTPUT
           fi
+      
+      - name: Create sync summary
+        if: steps.sync.outputs.updated == 'true'
+        run: |
+          echo "## Sync Successful! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Synced with upstream changes from walkrflocka/orpheusmorebetter" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Recent commits:" >> $GITHUB_STEP_SUMMARY
+          git log --oneline -5 >> $GITHUB_STEP_SUMMARY
 
   build:
     needs: sync
@@ -65,3 +77,11 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/orpheusmorebetter:latest
             ghcr.io/${{ github.repository_owner }}/orpheusmorebetter:${{ github.sha }}
+      
+      - name: Create build summary
+        run: |
+          echo "## Container Build Successful! 🐳" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Container pushed to:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository_owner }}/orpheusmorebetter:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository_owner }}/orpheusmorebetter:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
