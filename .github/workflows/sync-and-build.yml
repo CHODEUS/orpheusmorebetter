@@ -29,12 +29,34 @@ jobs:
           
           if [ "$LOCAL" != "$REMOTE" ]; then
             echo "Changes detected, syncing..."
-            git merge upstream/master --allow-unrelated-histories -m "chore: sync with upstream repository (auto-sync)"
-            git push origin master
-            echo "updated=true" >> $GITHUB_OUTPUT
+            if git merge upstream/master --allow-unrelated-histories -m "chore: sync with upstream repository (auto-sync)"; then
+              git push origin master
+              echo "updated=true" >> $GITHUB_OUTPUT
+            else
+              echo "::error::Merge conflict detected. Manual intervention required."
+              git merge --abort
+              echo "updated=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
           else
             echo "Already up to date"
             echo "updated=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create sync summary
+        if: always()
+        run: |
+          if [ "${{ steps.sync.outputs.updated }}" == "true" ]; then
+            echo "## ✅ Sync Successful!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Synced with upstream changes from walkrflocka/orpheusmorebetter" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Recent commits:" >> $GITHUB_STEP_SUMMARY
+            git log --oneline -5 >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ℹ️ Already Up to Date" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No new changes from upstream repository" >> $GITHUB_STEP_SUMMARY
           fi
 
   build:
@@ -44,6 +66,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: master
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -74,3 +98,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=chodeus/orpheusmorebetter:latest
           cache-to: type=inline
+      
+      - name: Create build summary
+        if: success()
+        run: |
+          echo "## 🐳 Container Build Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`chodeus/orpheusmorebetter:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`chodeus/orpheusmorebetter:master-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
