@@ -25,11 +25,11 @@ jobs:
           git fetch upstream
           
           LOCAL=$(git rev-parse HEAD)
-          REMOTE=$(git rev-parse upstream/main)
+          REMOTE=$(git rev-parse upstream/master)
           
           if [ "$LOCAL" != "$REMOTE" ]; then
             echo "Changes detected, syncing..."
-            git merge upstream/main --allow-unrelated-histories -m "chore: sync with upstream repository
+            git merge upstream/master --allow-unrelated-histories -m "chore: sync with upstream repository
             
             Automatically synced with walkrflocka/orpheusmorebetter"
             git push origin main
