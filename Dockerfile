@@ -1,4 +1,4 @@
-FROM python:3.14-alpine
+FROM python:3.13-alpine
 
 RUN apk add --no-cache \
     git \
@@ -9,7 +9,7 @@ RUN apk add --no-cache \
     flac \
     lame \
     sox \
-    libxm12-dev \
+    libxml2-dev \
     libxslt-dev \
     openssl-dev
 
