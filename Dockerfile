@@ -11,11 +11,7 @@ RUN apk add --no-cache \
     sox \
     py3-lxml \
     py3-packaging \
-    py3-pip \
-    python3-dev \
-    libxml2-dev \
-    libxslt-dev \
-    openssl-dev
+    py3-pip
 
 WORKDIR /app
 
