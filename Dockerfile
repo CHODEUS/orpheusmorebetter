@@ -9,9 +9,9 @@ RUN apk add --no-cache \
     flac \
     lame \
     sox \
-    py3-lxml \
-    py3-packaging \
-    py3-pip
+    libxm12-dev \
+    libxslt-dev \
+    openssl-dev
 
 WORKDIR /app
 
