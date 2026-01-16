@@ -1,29 +1,16 @@
-name: Build and Push Docker Image
+name: Build Main Image (Manual)
 
 on:
-  push:
-    branches: [ master ]
-    paths:
-      - 'Dockerfile'
-      - 'src/**'
-      - '**.py'
-      - 'requirements.txt'
-      - 'package*.json'
-      - '.github/workflows/docker-build.yml'
-      - '!README.md'
-      - '!*.md'
-  pull_request:
-    branches: [ master ]
-    paths:
-      - 'Dockerfile'
-      - 'src/**'
-      - '**.py'
-      - 'requirements.txt'
-      - 'package*.json'
-  workflow_dispatch: # Allows manual trigger
+  workflow_dispatch:  # Only manual trigger
+    inputs:
+      version:
+        description: 'Version tag (e.g., 1.0.0)'
+        required: false
+        default: 'latest'
+        type: string
 
 concurrency:
-  group: docker-build-${{ github.ref }}
+  group: docker-build-main
   cancel-in-progress: true
 
 jobs:
@@ -34,6 +21,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        ref: master
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -52,33 +41,31 @@ jobs:
         images: chodeus/orpheusmorebetter
         tags: |
           type=raw,value=latest
-          type=sha,prefix=${{ github.ref_name }}-
+          type=raw,value=${{ inputs.version }},enable=${{ inputs.version != 'latest' }}
+          type=sha,prefix=master-
     
     - name: Build and push Docker image
       uses: docker/build-push-action@v6
       with:
         context: .
         file: ./Dockerfile
-        push: ${{ github.event_name != 'pull_request' }}
+        push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=registry,ref=chodeus/orpheusmorebetter:latest
         cache-to: type=inline
+        build-args: |
+          VERSION=${{ inputs.version }}
+          GIT_BRANCH=master
     
     - name: Create build summary
-      if: success() && github.event_name != 'pull_request'
+      if: success()
       run: |
         echo "## 🐳 Container Build Successful!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Version**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
         echo "- \`chodeus/orpheusmorebetter:latest\`" >> $GITHUB_STEP_SUMMARY
+        echo "- \`chodeus/orpheusmorebetter:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
         echo "- \`chodeus/orpheusmorebetter:master-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-    
-    - name: Create PR build summary
-      if: success() && github.event_name == 'pull_request'
-      run: |
-        echo "## 🐳 Container Build Test Successful!" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Docker image built successfully but not pushed (PR build)" >> $GITHUB_STEP_SUMMARY
