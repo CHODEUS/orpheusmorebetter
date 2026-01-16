@@ -27,8 +27,8 @@ jobs:
           context: .
           push: true
           tags: |
-            yourusername/orpheusmorebetter:dev
-            yourusername/orpheusmorebetter:dev-${{ github.sha }}
+            chodeus/orpheusmorebetter:dev
+            chodeus/orpheusmorebetter:dev-${{ github.sha }}
           build-args: |
             VERSION=${{ github.sha }}
             GIT_BRANCH=dev
