@@ -1,3 +1,21 @@
+FROM python:3.13-alpine AS builder
+
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    linux-headers \
+    libxml2-dev \
+    libxslt-dev \
+    openssl-dev
+
+WORKDIR /build
+
+COPY requirements.txt .
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels -r requirements.txt
+
+COPY . .
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels .
+
 FROM python:3.13-alpine
 
 RUN apk add --no-cache \
@@ -10,23 +28,16 @@ RUN apk add --no-cache \
     libxslt \
     openssl \
     shadow \
-    su-exec \
-    && apk add --no-cache --virtual .build-deps \
-    gcc \
-    musl-dev \
-    linux-headers \
-    libxml2-dev \
-    libxslt-dev \
-    openssl-dev
+    su-exec
 
 WORKDIR /app
-COPY requirements.txt /app/
 
-RUN pip install --no-cache-dir -r requirements.txt \
-    && apk del .build-deps
+COPY --from=builder /wheels /wheels
+
+RUN pip install --no-cache-dir /wheels/* \
+    && rm -rf /wheels
 
 COPY . /app
-RUN pip install --no-cache-dir .
 
 ARG VERSION=dev
 ARG GIT_BRANCH=main
@@ -34,16 +45,18 @@ ARG GIT_BRANCH=main
 RUN echo "v${VERSION}" > /app/version.txt \
     && echo "${GIT_BRANCH}" > /app/branch.txt
 
-# Create directories with permissive permissions (will be fixed by start.sh)
 RUN mkdir -p /config /data /output /torrents
 
-# Make scripts executable
 RUN chmod +x /app/orpheusmorebetter /app/start.sh
 
-# Default values for Unraid (nobody:users)
+LABEL org.opencontainers.image.title="OrpheusMoreBetter" \
+      org.opencontainers.image.description="Automatic transcode helper for Orpheus Network" \
+      org.opencontainers.image.authors="CHODEUS" \
+      org.opencontainers.image.source="https://github.com/CHODEUS/orpheusmorebetter" \
+      org.opencontainers.image.version="${VERSION}"
+
 ENV PUID=99 \
     PGID=100 \
     UMASK=002
 
-# Container starts as root, start.sh handles user switching
 CMD ["/app/start.sh"]
