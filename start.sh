@@ -1,17 +1,38 @@
 #!/bin/sh
 set -e
 
-cd /app
+# Use defaults if not set (backward compatible)
+PUID=${PUID:-99}
+PGID=${PGID:-100}
+UMASK=${UMASK:-002}
 
 echo "🔄 Starting OrpheusMoreBetter..."
+echo "📋 User Configuration: PUID=${PUID} PGID=${PGID} UMASK=${UMASK}"
 
-# Ensure config directory exists
-mkdir -p /config
+# Create group if it doesn't exist
+if ! getent group ${PGID} > /dev/null 2>&1; then
+    echo "Creating group with GID ${PGID}"
+    addgroup -g ${PGID} appgroup
+fi
 
-# If config is owned by the wrong user, correct it (orpheus:orpheus / 99:99).
-# Ignore failures if container not privileged to change ownership.
-# This will change ownership of a host-mounted volume if the container runs as root.
-chown -R orpheus:orpheus /config 2>/dev/null || true
+GROUP_NAME=$(getent group ${PGID} | cut -d: -f1)
 
-# Drop privileges and exec the script directly (uses the script's shebang).
-exec su-exec orpheus /app/orpheusmorebetter "$@"
+# Create user if it doesn't exist
+if ! getent passwd ${PUID} > /dev/null 2>&1; then
+    echo "Creating user with UID ${PUID}"
+    adduser -D -u ${PUID} -G ${GROUP_NAME} -h /config appuser
+fi
+
+# Ensure directories exist
+mkdir -p /config /data /output /torrents
+
+# Set ownership of application directories
+echo "Setting permissions..."
+chown -R ${PUID}:${PGID} /config /data /output /torrents /app 2>/dev/null || true
+
+# Set umask for the session
+umask ${UMASK}
+
+# Drop privileges and run application
+echo "Starting application as UID ${PUID}, GID ${PGID}"
+exec su-exec ${PUID}:${PGID} /app/orpheusmorebetter "$@"
