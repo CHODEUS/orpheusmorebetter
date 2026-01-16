@@ -57,6 +57,7 @@ LABEL org.opencontainers.image.title="OrpheusMoreBetter" \
 
 ENV PUID=99 \
     PGID=100 \
-    UMASK=002
+    UMASK=002 \
+    HOME=/config
 
 CMD ["/app/start.sh"]
