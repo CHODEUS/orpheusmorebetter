@@ -440,8 +440,6 @@ Logs are saved to `/config/.orpheusmorebetter/logs/`
 
 - **Original project**: [orpheusmorebetter](https://github.com/walkrflocka/orpheusmorebetter) by walkrflocka
 - **Based on**: whatbetter-crawler
-- **Docker packaging**: CHODEUS
-- **Orpheus Network**: [https://orpheus.network](https://orpheus.network)
 
 ---
 
@@ -450,15 +448,3 @@ Logs are saved to `/config/.orpheusmorebetter/logs/`
 See the [upstream project](https://github.com/walkrflocka/orpheusmorebetter) for license information.
 
 ---
-
-## Contributing
-
-Issues and pull requests welcome at [https://github.com/CHODEUS/orpheusmorebetter](https://github.com/CHODEUS/orpheusmorebetter)
-
----
-
-## Links
-
-- **Docker Hub**: [chodeus/orpheusmorebetter](https://hub.docker.com/r/chodeus/orpheusmorebetter)
-- **GitHub**: [CHODEUS/orpheusmorebetter](https://github.com/CHODEUS/orpheusmorebetter)
-- **Upstream**: [walkrflocka/orpheusmorebetter](https://github.com/walkrflocka/orpheusmorebetter)
