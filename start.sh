@@ -53,4 +53,4 @@ umask ${UMASK}
 
 # Drop privileges and run application
 echo "✅ Starting application as UID ${PUID}, GID ${PGID}"
-exec su-exec ${PUID}:${PGID} /app/orpheusmorebetter "$@"
+exec su-exec ${PUID}:${PGID} env HOME=/config /app/orpheusmorebetter "$@"
