@@ -1,20 +1,65 @@
-orpheusmorebetter Docker
-Docker container for orpheusmorebetter - automatic transcode uploader for Orpheus.
-This is a vibe coded docker implementation of the orpheusmorebetter script.
-It was built for personal use but feel free to use it at your own risk.
-Features
+# orpheusmorebetter Docker
 
-Based on Python 3.13 alpine image
-Includes all required dependencies (mktorrent, flac, lame, sox)
-Runs as non-root user for security
-Configurable PUID/PGID/UMASK for Unraid compatibility
-Configurable volume mounts for data, output, and torrents
+Docker container for **orpheusmorebetter**, an automatic transcode and upload helper for **Orpheus**.
 
-Quick Start
-1. Install Container
-2. Edit configuration
-Edit ~/orpheus/config/.orpheusmorebetter/config with your Orpheus credentials and paths:
-ini[orpheus]
+This repository provides a Dockerised wrapper around the upstream
+[`orpheusmorebetter`](https://github.com/walkrflocka/orpheusmorebetter) script.
+Its purpose is to make running the tool easier and more reproducible, especially
+on systems like **Unraid**, by bundling all dependencies and handling permissions
+cleanly.
+
+This container is intended for CLI / task-based usage only.  
+There is **no web UI**, and the container will exit once processing is complete.
+
+---
+
+## Features
+
+- Based on **Python 3.13 (Alpine)**
+- Includes all required runtime dependencies:
+  - `mktorrent`
+  - `flac`
+  - `lame`
+  - `sox`
+- Runs as a **non-root user** after initial setup
+- Supports configurable **PUID / PGID / UMASK**
+- Designed to work cleanly with:
+  - Unraid
+  - Seedboxes
+  - Headless Linux hosts
+- Simple volume-based configuration:
+  - `/config` – persistent config and HOME
+  - `/data` – source FLACs
+  - `/output` – transcoded output
+  - `/torrents` – torrent watch directory
+
+---
+
+## Quick Start
+
+### 1. Pull the Image
+
+```bash
+docker pull chodeus/orpheusmorebetter:latest
+```
+
+---
+
+### 2. Configure orpheusmorebetter
+
+The upstream application stores its configuration relative to `$HOME`.
+In this container, `HOME` is set to `/config`.
+
+Create and edit:
+
+```text
+/config/.orpheusmorebetter/config
+```
+
+Example configuration:
+
+```ini
+[orpheus]
 username = YOUR_USERNAME
 password = YOUR_PASSWORD
 data_dir = /data
@@ -24,81 +69,128 @@ formats = flac, v0, 320
 media = cd, vinyl, web
 24bit_behaviour = 0
 tracker = https://home.opsfet.ch/
-api = https://orpheus.network
+api = https://orpheus.network/
 mode = both
 source = OPS
+```
 
-3. Run the container
-bashdocker run --rm \
+Refer to the upstream project for full configuration details and behaviour.
+
+---
+
+### 3. Run the Container
+
+```bash
+docker run --rm \
   -e PUID=99 \
   -e PGID=100 \
   -e UMASK=002 \
-  -v ~/orpheus/config:/config \
-  -v /path/to/your/flac/files:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/watch/folder:/torrents \
-  chodeus/orpheusmorebetter:latest
-
-Usage
-
-Scan all snatches and uploads
-bashdocker run --rm \
-  -e PUID=99 \
-  -e PGID=100 \
-  -e UMASK=002 \
-  -v ~/orpheus/config:/config \
+  -v /path/to/config:/config \
   -v /path/to/flacs:/data:ro \
   -v /path/to/output:/output \
   -v /path/to/watch:/torrents \
   chodeus/orpheusmorebetter:latest
+```
 
-Transcode a specific release
-bashdocker run --rm \
+The container will run the tool once and then exit.
+
+---
+
+## Usage
+
+### Process All Eligible Snatches / Uploads
+
+```bash
+docker run --rm \
   -e PUID=99 \
   -e PGID=100 \
   -e UMASK=002 \
-  -v ~/orpheus/config:/config \
+  -v /path/to/config:/config \
+  -v /path/to/flacs:/data:ro \
+  -v /path/to/output:/output \
+  -v /path/to/watch:/torrents \
+  chodeus/orpheusmorebetter:latest
+```
+
+---
+
+### Process a Specific Release
+
+```bash
+docker run --rm \
+  -e PUID=99 \
+  -e PGID=100 \
+  -e UMASK=002 \
+  -v /path/to/config:/config \
   -v /path/to/flacs:/data:ro \
   -v /path/to/output:/output \
   -v /path/to/watch:/torrents \
   chodeus/orpheusmorebetter:latest \
   "https://orpheus.network/torrents.php?id=1000&torrentid=1000000"
+```
 
-Additional options
+---
 
-bash# Use 4 threads for transcoding
+## Additional CLI Options
+
+All upstream CLI flags are supported.
+
+```bash
+# Use 4 parallel jobs
 docker run --rm ... chodeus/orpheusmorebetter:latest -j 4
 
-# Don't upload (test mode)
+# Dry-run / do not upload
 docker run --rm ... chodeus/orpheusmorebetter:latest -U
 
-# With 2FA TOTP
+# Provide TOTP for 2FA
 docker run --rm ... chodeus/orpheusmorebetter:latest -t 123456
-Docker Compose
-yamlversion: '3.8'
+```
+
+---
+
+## Docker Compose Example
+
+```yaml
+version: "3.8"
+
 services:
   orpheusmorebetter:
     image: chodeus/orpheusmorebetter:latest
     container_name: orpheusmorebetter
     environment:
-      - PUID=99          # User ID (99 = nobody on Unraid)
-      - PGID=100         # Group ID (100 = users on Unraid)
-      - UMASK=002        # File permission mask
+      - PUID=99
+      - PGID=100
+      - UMASK=002
     volumes:
       - ./config:/config
-      - /path/to/your/flac/files:/data:ro
+      - /path/to/flacs:/data:ro
       - /path/to/output:/output
-      - /path/to/watch/folder:/torrents
-    # Since this is a task runner, not a daemon, you'll typically run it manually
-    # Remove the command below to run interactively
+      - /path/to/watch:/torrents
     command: --help
     restart: "no"
+```
 
+This is provided mainly for reference; the container is not intended to be
+left running continuously.
+
+---
 
 ## Unraid Setup
 
-**Basic Unraid Template:**
-```
+### Overview
+
+This container is well-suited to Unraid because it:
+- Respects `PUID` / `PGID`
+- Stores all state under `/config`
+- Runs as a one-shot task
+
+You typically start it manually or via **User Scripts**, then let it exit.
+
+---
+
+### Unraid Template (XML)
+
+```xml
 <?xml version="1.0"?>
 <Container version="2">
   <Name>orpheusmorebetter</Name>
@@ -106,105 +198,69 @@ services:
   <Registry>https://hub.docker.com/r/chodeus/orpheusmorebetter</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
+
   <Support>https://github.com/CHODEUS/orpheusmorebetter</Support>
   <Project>https://github.com/CHODEUS/orpheusmorebetter</Project>
-  <Overview>CLI-only container to automatically transcode and upload FLACs to orpheus.network. No web UI or listening ports. Configure via files under the /config mount (HOME).</Overview>
+
+  <Overview>
+CLI-only container to automatically transcode and upload FLACs to orpheus.network.
+No web UI or listening ports. Configuration is done via files under /config.
+  </Overview>
+
   <Category>Other</Category>
-  <WebUI/>
-  <Icon/>
-  <ExtraParams/>
-  <PostArgs/>
-  <CPUset/>
-  <DateInstalled>1762235398</DateInstalled>
-  <DonateText/>
-  <DonateLink/>
-  <Requires>Edit the configuration files under the mapped /config path (default: /mnt/user/appdata/orpheusmorebetter) before running. This container expects directories: /config (HOME), /data, /output and /torrents.</Requires>
 
-  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID for file ownership (99 = nobody)" Type="Variable" Display="always" Required="true" Mask="false">99</Config>
-  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file ownership (100 = users)" Type="Variable" Display="always" Required="true" Mask="false">100</Config>
-  <Config Name="UMASK" Target="UMASK" Default="002" Mode="" Description="File permission mask (002 = rwxrwxr-x for folders, rw-rw-r-- for files)" Type="Variable" Display="always" Required="true" Mask="false">002</Config>
-  
-  <Config Name="Host Path for /config" Target="/config" Default="/mnt/user/appdata/orpheusmorebetter" Mode="rw" Description="Container HOME and persistent configuration. The app stores ~/.orpheusmorebetter here." Type="Path" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="Host Path for /data (input)" Target="/data" Default="" Mode="ro" Description="Input directory for music files to be processed (read-only recommended)." Type="Path" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="Host Path for /output" Target="/output" Default="" Mode="rw" Description="Output directory for transcoded files." Type="Path" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Host Path for /torrents" Target="/torrents" Default="" Mode="rw" Description="Torrent/watch directory (torrent_dir in config)." Type="Path" Display="always" Required="true" Mask="false"></Config>
-  
-  <Config Name="TZ" Target="TZ" Default="Etc/UTC" Mode="" Description="Timezone (e.g. America/New_York)" Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="HOME" Target="HOME" Default="/config" Mode="" Description="Container HOME. The image sets HOME=/config so configuration is under this path." Type="Variable" Display="advanced" Required="false" Mask="false">/config</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Type="Variable" Display="always" />
+  <Config Name="PGID" Target="PGID" Default="100" Type="Variable" Display="always" />
+  <Config Name="UMASK" Target="UMASK" Default="002" Type="Variable" Display="always" />
 
-  <TailscaleStateDir/>
+  <Config Name="Config Path" Target="/config" Default="/mnt/user/appdata/orpheusmorebetter" Type="Path" Display="always" />
+  <Config Name="FLAC Source" Target="/data" Type="Path" Display="always" />
+  <Config Name="Output Path" Target="/output" Type="Path" Display="advanced" />
+  <Config Name="Torrent Watch" Target="/torrents" Type="Path" Display="always" />
 </Container>
 ```
 
-**Volume Mappings:**
+---
 
-/config - Configuration files (persistent)
-/data - Your FLAC source files (read-only recommended)
-/output - Transcode output directory
-/torrents - Torrent watch directory
+### Recommended Volume Mapping
 
-| Container Path | Host Path | Access Mode |
-|---------------|-----------|-------------|
-| `/config` | `/mnt/user/appdata/orpheusmorebetter` | Read/Write |
-| `/data` | `/mnt/user/path/to/flacs` | Read Only (recommended) |
-| `/output` | `/mnt/user/path/to/output` | Read/Write |
-| `/torrents` | `/mnt/user/path/to/watch` | Read/Write |
+| Container Path | Purpose | Notes |
+|---------------|---------|-------|
+| `/config` | Configuration + HOME | Persistent |
+| `/data` | Source FLACs | Read-only recommended |
+| `/output` | Transcodes | Optional |
+| `/torrents` | Watch directory | Required |
 
-**Environment Variables:**
+---
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PUID` | `99` | User ID (99 = nobody on Unraid) |
-| `PGID` | `100` | Group ID (100 = users on Unraid) |
-| `UMASK` | `002` | File permission mask |
-| `TZ` | `Etc/UTC` | Timezone |
+### Running on Unraid
 
-### 2. Running on Unraid
+- Start the container from the Docker tab
+- Wait for it to complete
+- Review logs
+- Container will stop automatically
 
-Since this is a task-based container (not a daemon), you'll run it via container start/stop. The container will execute and stop when complete.
+For automation, schedule runs using the **User Scripts** plugin.
 
-**To run manually:**
-1. Start the container from Unraid Docker tab
-2. Container will process files and stop automatically
-3. Check logs for results
+---
 
-**For scheduled runs:**
-Use Unraid's User Scripts plugin to start the container on a schedule.
+## Security Notes
 
-### 3. Config and Container example
+- Container briefly runs as root to fix ownership, then drops privileges
+- Defaults to `99:100` (`nobody:users`)
+- Credentials are stored in plaintext config files — protect `/config`
+- Avoid setting `PUID=0` unless you understand the implications
 
-It should look something like this:
+---
 
-**Config file (`/mnt/user/appdata/orpheusmorebetter/.orpheusmorebetter/config`):**
-```
-[orpheus]
-username = Myusername
-password = Mytorrentsitepassword
-data_dir = /data
-output_dir = /output
-torrent_dir = /torrents
-formats = flac, v0, 320
-media = cd, vinyl, web
-24bit_behaviour = 0
-tracker = https://home.opsfet.ch/
-mode = both
-api = https://orpheus.network/
-source = OPS
-```
+## Credits
 
-Security Notes
+- Original project: **orpheusmorebetter**
+- Based on: **whatbetter-crawler**
+- Docker packaging: **CHODEUS**
 
-Container starts as root briefly to set permissions, then drops to PUID:PGID
-Default runs as UID 99:100 (nobody:users) - non-root user
-Credentials are stored in config file - keep this volume secure
-Consider using read-only mount for source FLAC directory (/data:ro)
-Never set PUID=0 (root) unless you understand the security implications
+---
 
-Credits
+## License
 
-Original script: orpheusmorebetter
-Based on whatbetter-crawler
-Docker implementation: CHODEUS
-
-License
-See the original project for license information.
+See the upstream project for license information.
