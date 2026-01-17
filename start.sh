@@ -36,7 +36,7 @@ if ! getent passwd ${PUID} > /dev/null 2>&1; then
 fi
 
 # Ensure directories exist
-mkdir -p /config /data /output /torrents
+mkdir -p /config
 
 # Check if config exists, provide helpful message if not
 if [ ! -f /config/.orpheusmorebetter/config ]; then
@@ -51,6 +51,6 @@ chown -R ${PUID}:${PGID} /config /output /torrents /app 2>/dev/null || true
 # Set umask for the session
 umask ${UMASK}
 
-# Drop privileges and run application
+# Drop privileges and run application with unbuffered Python output
 echo "✅ Starting application as UID ${PUID}, GID ${PGID}"
-exec su-exec ${PUID}:${PGID} env HOME=/config /app/orpheusmorebetter "$@"
+exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@"
