@@ -23,9 +23,7 @@ This repository provides a Dockerized wrapper around the upstream
   - Headless Linux hosts
 - Simple volume-based configuration:
   - `/config` – persistent config and cache
-  - `/data` – source FLACs
-  - `/output` – transcoded output
-  - `/torrents` – torrent file output
+  - `/data/torrents` – source FLACs (match torrent client's container path)
 
 ---
 
@@ -41,8 +39,7 @@ docker pull chodeus/orpheusmorebetter:latest
 
 ### 2. Configure orpheusmorebetter
 
-The application stores its configuration in `$HOME/.orpheusmorebetter/`.
-In this container, `HOME` is set to `/config`.
+The application stores its configuration in `/config/.orpheusmorebetter/`.
 
 On first run, a default config will be created at:
 
@@ -51,14 +48,15 @@ On first run, a default config will be created at:
 ```
 
 Edit this file with your credentials and preferences:
+dir paths provided as an example:
 
 ```ini
 [orpheus]
 username = YOUR_USERNAME
 password = YOUR_PASSWORD
-data_dir = /data
-output_dir = /output
-torrent_dir = /torrents
+data_dir = /data/torrents/music
+output_dir = /data/torrents/uploads
+torrent_dir = /data/torrents/rips
 formats = flac, v0, 320
 media = cd, vinyl, web
 24bit_behaviour = 0
@@ -71,9 +69,9 @@ source = OPS
 #### Configuration Options
 
 - **`username`** / **`password`**: Your Orpheus Network credentials
-- **`data_dir`**: Where to find source FLAC files (use `/data` in container)
-- **`output_dir`**: Where to write transcoded files (use `/output`)
-- **`torrent_dir`**: Where to save .torrent files (use `/torrents`)
+- **`data_dir`**: Where to find source FLAC files
+- **`output_dir`**: Where to write transcoded files
+- **`torrent_dir`**: Where to save .torrent files
 - **`formats`**: Comma-separated list of formats to create
   - Options: `flac`, `v0`, `320`
 - **`media`**: Which media types to process
@@ -100,10 +98,8 @@ docker run --rm \
   -e PGID=100 \
   -e UMASK=002 \
   -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest
+  -v /path/to/flacs:/data/torrents:rw \
+   chodeus/orpheusmorebetter:latest
 ```
 
 This will search for transcode candidates based on your configured `mode` setting.
@@ -116,10 +112,8 @@ docker run --rm \
   -e PGID=100 \
   -e UMASK=002 \
   -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest \
+  -v /path/to/flacs:/data/torrents:rw \
+    chodeus/orpheusmorebetter:latest \
   "https://orpheus.network/torrents.php?id=1000&torrentid=1000000"
 ```
 
@@ -161,86 +155,8 @@ All upstream CLI options are fully supported. Pass them after the image name:
 
 | Option | Description |
 |--------|-------------|
-| `-d, --debug` | Enable debug logging |
 | `--version` | Show version and exit |
 | `--help` | Show help message and exit |
-
----
-
-## Usage Examples
-
-### Process All Snatched Releases
-
-```bash
-docker run --rm \
-  -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest \
-  -m snatched
-```
-
-### Process Specific Release with Debug Logging
-
-```bash
-docker run --rm \
-  -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest \
-  -d "https://orpheus.network/torrents.php?id=1234&torrentid=5678"
-```
-
-### Dry Run (Don't Upload)
-
-```bash
-docker run --rm \
-  -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest \
-  -U -m both
-```
-
-### Process Only One Format Per Release
-
-```bash
-docker run --rm \
-  -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest \
-  -s -m uploaded
-```
-
-### Use 2FA Token
-
-```bash
-docker run --rm \
-  -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  chodeus/orpheusmorebetter:latest \
-  -t 123456
-```
-
-### Process URLs from File
-
-```bash
-docker run --rm \
-  -v /path/to/config:/config \
-  -v /path/to/flacs:/data:ro \
-  -v /path/to/output:/output \
-  -v /path/to/torrents:/torrents \
-  -v /path/to/urls.txt:/urls.txt:ro \
-  chodeus/orpheusmorebetter:latest \
-  /urls.txt
-```
 
 ---
 
@@ -259,12 +175,10 @@ services:
       - UMASK=002
     volumes:
       - ./config:/config
-      - /path/to/flacs:/data:ro
-      - /path/to/output:/output
-      - /path/to/torrents:/torrents
+      - /path/to/flacs:/data/torrents:rw
     # Examples - uncomment and modify as needed:
     # command: -m snatched              # Process all snatched
-    # command: -d -U                    # Debug mode, no upload
+    # command: -U                       # no upload
     # command: "https://orpheus.network/torrents.php?id=123&torrentid=456"
     restart: "no"
 ```
@@ -284,8 +198,6 @@ This container is well-suited to Unraid because it:
 - Runs as a one-shot task (exits when complete)
 - No background services or web UI
 
-You typically start it manually from the Docker tab or via **User Scripts**, then let it exit.
-
 ---
 
 ### Unraid Template (XML)
@@ -304,7 +216,6 @@ You typically start it manually from the Docker tab or via **User Scripts**, the
 
   <Overview>
 CLI-only container to automatically transcode FLACs and upload to Orpheus Network.
-No web UI or listening ports. Configuration is done via files under /config.
 Supports all upstream command-line options including automatic candidate searching,
 manual URL processing, and various transcoding modes.
   </Overview>
@@ -315,23 +226,10 @@ manual URL processing, and various transcoding modes.
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID" Type="Variable" Display="always" Required="false" Mask="false">100</Config>
   <Config Name="UMASK" Target="UMASK" Default="002" Mode="" Description="File creation mask" Type="Variable" Display="always" Required="false" Mask="false">002</Config>
 
-  <Config Name="Config Path" Target="/config" Default="/mnt/user/appdata/orpheusmorebetter" Mode="rw" Description="Config and cache storage" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/orpheusmorebetter</Config>
-  <Config Name="FLAC Source" Target="/data" Default="" Mode="ro" Description="Source FLAC files" Type="Path" Display="always" Required="true" Mask="false"></Config>
-  <Config Name="Output Path" Target="/output" Default="" Mode="rw" Description="Transcoded output files" Type="Path" Display="advanced" Required="false" Mask="false"></Config>
-  <Config Name="Torrent Directory" Target="/torrents" Default="" Mode="rw" Description="Torrent file output" Type="Path" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Config Path" Target="/config" Default="" Mode="rw" Description="Config" Type="Path" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Data" Target="/data/torrents" Default="" Mode="rw" Description="Source FLAC files" Type="Path" Display="always" Required="true" Mask="false"></Config>
 </Container>
 ```
-
----
-
-### Recommended Volume Mapping
-
-| Container Path | Purpose | Notes |
-|---------------|---------|-------|
-| `/config` | Configuration + cache | Persistent, contains credentials |
-| `/data` | Source FLACs | Read-only recommended |
-| `/output` | Transcoded files | Optional, can use `/data` if preferred |
-| `/torrents` | .torrent files | Required for uploads |
 
 ---
 
@@ -339,17 +237,10 @@ manual URL processing, and various transcoding modes.
 
 1. Add the container using the template above
 2. Configure volume paths
-3. Edit `/mnt/user/appdata/orpheusmorebetter/.orpheusmorebetter/config` with your credentials
+3. Edit `config` with your credentials
 4. Start the container from the Docker tab
 5. Monitor logs in real-time
 6. Container will stop automatically when complete
-
-For automation, schedule runs using the **User Scripts** plugin:
-
-```bash
-#!/bin/bash
-docker start orpheusmorebetter
-```
 
 ---
 
@@ -406,23 +297,13 @@ If the container complains about missing config:
 
 - Check `PUID` and `PGID` match your system
 - Verify volume mount permissions
-- Ensure `/config`, `/output`, and `/torrents` are writable
+- Ensure `/config` and `/data/torrents` are writable
 
 ### Authentication errors
 
 - Verify username and password in config
 - If using 2FA, provide TOTP with `-t` flag
 - Check API endpoint is correct: `https://orpheus.network/`
-
-### Enable debug logging
-
-Add `-d` flag to see detailed operation:
-
-```bash
-docker run --rm -v ... chodeus/orpheusmorebetter:latest -d
-```
-
-Logs are saved to `/config/.orpheusmorebetter/logs/`
 
 ---
 
@@ -432,7 +313,6 @@ Logs are saved to `/config/.orpheusmorebetter/logs/`
 - Defaults to `99:100` (`nobody:users` on Unraid)
 - Credentials are stored in **plaintext** config files — protect `/config` directory
 - Avoid setting `PUID=0` unless you understand the security implications
-- Consider mounting `/data` as read-only (`:ro`) to prevent accidental modifications
 
 ---
 
