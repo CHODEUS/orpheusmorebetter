@@ -45,7 +45,7 @@ if ! getent passwd ${PUID} > /dev/null 2>&1; then
 fi
 
 # Ensure directories exist
-mkdir -p /config /data /output /torrents
+mkdir -p /config
 
 # Check if config exists, provide helpful message if not
 if [ ! -f /config/.orpheusmorebetter/config ]; then
