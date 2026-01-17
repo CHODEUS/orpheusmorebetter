@@ -3,7 +3,13 @@ name: Sync and Build Container
 on:
   schedule:
     - cron: '0 0 * * 0'  # Run every Sunday at midnight UTC
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if no code changes'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -20,6 +26,10 @@ jobs:
     timeout-minutes: 10
     outputs:
       updated: ${{ steps.sync.outputs.updated }}
+      manual_review_needed: ${{ steps.sync.outputs.manual_review_needed }}
+      manual_review_files: ${{ steps.sync.outputs.manual_review_files }}
+      deleted_files_detected: ${{ steps.sync.outputs.deleted_files_detected }}
+      deleted_files: ${{ steps.sync.outputs.deleted_files }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,22 +49,92 @@ jobs:
           REMOTE=$(git rev-parse upstream/master)
           
           if [ "$LOCAL" != "$REMOTE" ]; then
-            echo "📊 Commit histories differ, attempting merge..."
-            if git merge upstream/master --allow-unrelated-histories -m "chore: sync with upstream repository (auto-sync)"; then
-              NEW_LOCAL=$(git rev-parse HEAD)
-              if [ "$LOCAL" != "$NEW_LOCAL" ]; then
-                git push origin dev
-                echo "updated=true" >> $GITHUB_OUTPUT
-                echo "✅ Successfully synced and pushed changes to dev"
-              else
-                echo "ℹ️ No changes needed - content already matches upstream"
+            echo "📊 Changes detected in upstream"
+            
+            # Get list of changed files from upstream
+            UPSTREAM_CHANGES=$(git diff --name-only HEAD upstream/master)
+            echo "Upstream changed files:"
+            echo "$UPSTREAM_CHANGES"
+            
+            # Files we auto-sync (code only, not requirements/config/docs)
+            AUTO_SYNC_PATTERN='(\.py$|^orpheusmorebetter$|pyproject\.toml|setup\.py|models/|services/|tests/)'
+            
+            # Filter files to auto-sync
+            FILES_TO_SYNC=$(echo "$UPSTREAM_CHANGES" | grep -E "$AUTO_SYNC_PATTERN" || true)
+            
+            if [ -n "$FILES_TO_SYNC" ]; then
+              echo "Auto-syncing these files:"
+              echo "$FILES_TO_SYNC"
+              
+              # Track deleted files separately
+              DELETED_FILES=""
+              
+              # Checkout only the files we want to sync
+              echo "$FILES_TO_SYNC" | while IFS= read -r file; do
+                if [ -z "$file" ]; then
+                  continue
+                fi
+                
+                if git cat-file -e upstream/master:"$file" 2>/dev/null; then
+                  # File exists upstream, check it out
+                  if ! git checkout upstream/master -- "$file" 2>/dev/null; then
+                    echo "::warning::Could not checkout $file"
+                  fi
+                else
+                  # File was deleted upstream - flag for manual review
+                  if [ -e "$file" ]; then
+                    echo "⚠️ File/directory deleted upstream: $file"
+                    if [ -z "$DELETED_FILES" ]; then
+                      DELETED_FILES="$file"
+                    else
+                      DELETED_FILES="$DELETED_FILES
+          $file"
+                    fi
+                  fi
+                fi
+              done
+              
+              # Store deleted files for notification
+              if [ -n "$DELETED_FILES" ]; then
+                echo "deleted_files_detected=true" >> $GITHUB_OUTPUT
+                echo "deleted_files<<EOF" >> $GITHUB_OUTPUT
+                echo "$DELETED_FILES" >> $GITHUB_OUTPUT
+                echo "EOF" >> $GITHUB_OUTPUT
+              fi
+              
+              git add -A
+              
+              # Check if there are actually changes to commit
+              if git diff --cached --quiet; then
+                echo "ℹ️ No actual changes after sync"
                 echo "updated=false" >> $GITHUB_OUTPUT
+              else
+                git commit -m "chore: auto-sync code files from upstream"
+                
+                NEW_LOCAL=$(git rev-parse HEAD)
+                if [ "$LOCAL" != "$NEW_LOCAL" ]; then
+                  git push origin dev
+                  echo "updated=true" >> $GITHUB_OUTPUT
+                  echo "✅ Auto-synced code files and will trigger build"
+                else
+                  echo "updated=false" >> $GITHUB_OUTPUT
+                fi
               fi
             else
-              echo "::error::Merge conflict detected. Manual intervention required."
-              git merge --abort
+              echo "ℹ️ No auto-syncable files changed"
               echo "updated=false" >> $GITHUB_OUTPUT
-              exit 1
+            fi
+            
+            # Check for files that need manual review
+            MANUAL_REVIEW=$(echo "$UPSTREAM_CHANGES" | grep -vE "$AUTO_SYNC_PATTERN" || true)
+            if [ -n "$MANUAL_REVIEW" ]; then
+              echo "⚠️ These files changed but need manual review:"
+              echo "$MANUAL_REVIEW"
+              echo ""
+              echo "manual_review_needed=true" >> $GITHUB_OUTPUT
+              echo "manual_review_files<<EOF" >> $GITHUB_OUTPUT
+              echo "$MANUAL_REVIEW" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
             fi
           else
             echo "✅ Already up to date with upstream"
@@ -69,46 +149,97 @@ jobs:
           if [ "${{ steps.sync.outputs.updated }}" == "true" ]; then
             echo "## ✅ Sync Successful!" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Synced with upstream changes from walkrflocka/orpheusmorebetter to dev branch" >> $GITHUB_STEP_SUMMARY
+            echo "Auto-synced code files from walkrflocka/orpheusmorebetter to dev branch" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### Recent commits:" >> $GITHUB_STEP_SUMMARY
             git log --oneline -5 >> $GITHUB_STEP_SUMMARY
           elif [ "$SYNC_STATUS" == "failure" ]; then
             echo "## ⚠️ Sync Failed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Merge conflict detected. Manual intervention required." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Please review the logs and resolve conflicts manually." >> $GITHUB_STEP_SUMMARY
+            echo "Error during sync. Check logs for details." >> $GITHUB_STEP_SUMMARY
           else
             echo "## ℹ️ Already Up to Date" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "No new changes from upstream repository" >> $GITHUB_STEP_SUMMARY
+            echo "No new code changes from upstream repository" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.sync.outputs.manual_review_needed }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 🔍 Manual Review Needed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following files changed upstream but were NOT auto-synced:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.sync.outputs.manual_review_files }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review these changes at: https://github.com/walkrflocka/orpheusmorebetter" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ steps.sync.outputs.deleted_files_detected }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 🗑️ Files Deleted Upstream" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following files/directories were deleted upstream and need manual removal:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.sync.outputs.deleted_files }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review and manually delete these if appropriate." >> $GITHUB_STEP_SUMMARY
           fi
       
-      - name: Notify on sync failure
-        if: failure()
+      - name: Send sync status notification
+        if: always() && env.DISCORD_WEBHOOK != ''
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
+          SYNC_STATUS="${{ steps.sync.outcome }}"
+          UPDATED="${{ steps.sync.outputs.updated }}"
+          MANUAL_REVIEW="${{ steps.sync.outputs.manual_review_needed }}"
+          
+          # Determine notification details based on outcome
+          if [ "$SYNC_STATUS" == "failure" ]; then
+            TITLE="⚠️ Upstream Sync Failed"
+            DESCRIPTION="Error during upstream sync.\n\n[View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            COLOR="15158332"  # Red
+          elif [ "$UPDATED" == "true" ]; then
+            TITLE="✅ Code Auto-Synced from Upstream"
+            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n[View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            COLOR="3066993"  # Green
+          else
+            TITLE="ℹ️ No Changes Detected"
+            DESCRIPTION="Checked upstream repository - already up to date.\n\nNo sync or build required.\n\n[View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            COLOR="7506394"  # Blue
+          fi
+          
+          # Add manual review note if needed
+          if [ "$MANUAL_REVIEW" == "true" ]; then
+            DESCRIPTION="${DESCRIPTION}\n\n⚠️ **Manual Review Required**\nSome files changed but need your review:\n\`\`\`\n${{ steps.sync.outputs.manual_review_files }}\n\`\`\`"
+          fi
+          
+          # Add deleted files note if needed
+          if [ "${{ steps.sync.outputs.deleted_files_detected }}" == "true" ]; then
+            DESCRIPTION="${DESCRIPTION}\n\n🗑️ **Files Deleted Upstream**\nThese files/directories were deleted and need manual removal:\n\`\`\`\n${{ steps.sync.outputs.deleted_files }}\n\`\`\`"
+          fi
+          
           curl -H "Content-Type: application/json" \
                -d "{
                  \"embeds\": [{
-                   \"title\": \"⚠️ Upstream Sync Failed\",
-                   \"description\": \"Merge conflict detected during upstream sync.\n\n[View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\",
-                   \"color\": 16776960,
+                   \"title\": \"$TITLE\",
+                   \"description\": \"$DESCRIPTION\",
+                   \"color\": $COLOR,
                    \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
                    \"footer\": {
                      \"text\": \"${{ github.repository }}\"
                    }
                  }]
                }" \
-               $DISCORD_WEBHOOK || echo "Discord notification failed"
+               $DISCORD_WEBHOOK || echo "Discord notification failed (non-critical)"
 
   build:
     needs: sync
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: needs.sync.outputs.updated == 'true' || github.event_name == 'workflow_dispatch'
+    if: needs.sync.outputs.updated == 'true' || github.event.inputs.force_build == 'true'
     
     permissions:
       contents: read
@@ -120,11 +251,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: dev
-          fetch-depth: 0  # ADD: Fetch all history
       
-      - name: Pull latest changes  # ADD: Ensure we have the synced code
+      - name: Ensure we have latest changes
         run: |
-          git pull origin dev
+          git fetch origin dev
+          git reset --hard origin/dev
+          echo "Building from commit: $(git rev-parse HEAD)"
+          echo "Commit message: $(git log -1 --pretty=%B)"
+      
+      - name: Verify orpheusmorebetter script exists
+        run: |
+          if [ ! -f "orpheusmorebetter" ]; then
+            echo "::error::orpheusmorebetter script not found!"
+            exit 1
+          fi
+          echo "✓ orpheusmorebetter script found"
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -209,7 +350,7 @@ jobs:
   notify:
     needs: [sync, build]
     runs-on: ubuntu-latest
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure')
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure') && secrets.DISCORD_WEBHOOK_URL != ''
     
     permissions:
       contents: read
@@ -233,7 +374,7 @@ jobs:
                -d "{
                  \"embeds\": [{
                    \"title\": \"Docker Build Complete (Dev)\",  
-                   \"description\": \"**Status:** $STATUS\n**Image:** \`chodeus/orpheusmorebetter:dev\`\n**Commit:** \`${GITHUB_SHA:0:7}\`\n\n$DESCRIPTION\",
+                   \"description\": \"**Status:** $STATUS\n**Image:** \\\`chodeus/orpheusmorebetter:dev\\\`\n**Commit:** \\\`${GITHUB_SHA:0:7}\\\`\n\n$DESCRIPTION\",
                    \"color\": $COLOR,
                    \"url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
                    \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
