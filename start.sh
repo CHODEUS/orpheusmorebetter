@@ -1,14 +1,18 @@
 #!/bin/sh
 set -e
 
+# Clear previous logs
+> /proc/1/fd/1 2>/dev/null || true
+> /proc/1/fd/2 2>/dev/null || true
+
 # Use defaults if not set (backward compatible)
 PUID=${PUID:-99}
 PGID=${PGID:-100}
 UMASK=${UMASK:-002}
 
-# Function to log with timestamp
+# Function to log with timestamp directly to stderr (unbuffered)
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
+    printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >&2
 }
 
 log "🔄 Starting OrpheusMoreBetter..."
@@ -41,7 +45,7 @@ if ! getent passwd ${PUID} > /dev/null 2>&1; then
 fi
 
 # Ensure directories exist
-mkdir -p /config /data
+mkdir -p /config /data /output /torrents
 
 # Check if config exists, provide helpful message if not
 if [ ! -f /config/.orpheusmorebetter/config ]; then
@@ -58,9 +62,5 @@ umask ${UMASK}
 
 # Drop privileges and run application with unbuffered Python output
 log "✅ Starting application as UID ${PUID}, GID ${PGID}"
-
-# Force flush all output before starting app
-sync
-sleep 0.1
 
 exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@"
