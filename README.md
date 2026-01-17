@@ -1,6 +1,6 @@
 # orpheusmorebetter Docker
 
-Docker container for **orpheusmorebetter**, an automatic transcode and upload helper for **OPS**.
+This is a vibe coded Docker container for **orpheusmorebetter**, an automatic transcode and upload helper for **OPS**.
 
 This repository provides a Dockerized wrapper around the upstream
 [`orpheusmorebetter`](https://github.com/walkrflocka/orpheusmorebetter) script.
@@ -320,6 +320,7 @@ If the container complains about missing config:
 
 - **Original project**: [orpheusmorebetter](https://github.com/walkrflocka/orpheusmorebetter) by walkrflocka
 - **Based on**: whatbetter-crawler
+- **Primary Coder**: my friend Claude.ai
 
 ---
 
