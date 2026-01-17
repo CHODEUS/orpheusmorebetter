@@ -43,7 +43,7 @@ if ! getent passwd ${PUID} > /dev/null 2>&1; then
 fi
 
 # Ensure directories exist
-mkdir -p /config
+mkdir -p /config /data
 
 # Check if config exists, provide helpful message if not
 if [ ! -f /config/.orpheusmorebetter/config ]; then
@@ -59,7 +59,6 @@ chown -R ${PUID}:${PGID} /config /output /torrents /app 2>/dev/null || true
 umask ${UMASK}
 
 # Drop privileges and run application with unbuffered Python output
-# Strip milliseconds from timestamps using sed
 log "✅ Starting application as UID ${PUID}, GID ${PGID}"
 
-exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@" 2>&1 | sed -u 's/\([0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\),[0-9]\{3\}/\1/g'
+exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@"
