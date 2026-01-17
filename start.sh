@@ -1,10 +1,6 @@
 #!/bin/sh
 set -e
 
-# Clear previous logs
-> /proc/1/fd/1 2>/dev/null || true
-> /proc/1/fd/2 2>/dev/null || true
-
 # Use defaults if not set (backward compatible)
 PUID=${PUID:-99}
 PGID=${PGID:-100}
@@ -15,6 +11,8 @@ log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >&2
 }
 
+# Visual separator for new container run
+log "═══════════════════════════════════════════════════════"
 log "🔄 Starting OrpheusMoreBetter..."
 log "📋 User Configuration: PUID=${PUID} PGID=${PGID} UMASK=${UMASK}"
 
@@ -61,6 +59,7 @@ chown -R ${PUID}:${PGID} /config /output /torrents /app 2>/dev/null || true
 umask ${UMASK}
 
 # Drop privileges and run application with unbuffered Python output
+# Strip milliseconds from timestamps using sed
 log "✅ Starting application as UID ${PUID}, GID ${PGID}"
 
-exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@"
+exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@" 2>&1 | sed -u 's/\([0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\),[0-9]\{3\}/\1/g'
