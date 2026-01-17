@@ -6,6 +6,9 @@ PUID=${PUID:-99}
 PGID=${PGID:-100}
 UMASK=${UMASK:-002}
 
+# Force unbuffered output for shell commands
+exec 1>&1 2>&2
+
 echo "🔄 Starting OrpheusMoreBetter..."
 echo "📋 User Configuration: PUID=${PUID} PGID=${PGID} UMASK=${UMASK}"
 
