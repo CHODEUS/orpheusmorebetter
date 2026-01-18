@@ -8,32 +8,16 @@ on:
         required: true
         type: string
       status:
-        description: 'Status of the operation (success, failure, info, warning)'
-        required: true
-        type: string
-      title:
-        description: 'Notification title'
-        required: true
-        type: string
-      description:name: Reusable Logging and Notifications
-
-on:
-  workflow_call:
-    inputs:
-      event_type:
-        description: 'Type of event (sync, build, security)'
-        required: true
-        type: string
-      status:
         description: 'Status of the operation (success, failure, info, warning, skipped)'
         required: true
         type: string
       title:
-        description: 'Notification title'
-        required: true
+        description: 'Notification title (optional – auto-generated if empty)'
+        required: false
         type: string
+        default: ''
       description:
-        description: 'Notification description'
+        description: 'Notification description (optional – auto-generated if empty)'
         required: false
         type: string
         default: ''
@@ -51,44 +35,40 @@ on:
         description: 'Include commit link in notification'
         required: false
         type: boolean
-        default: false
+        default: true
+
       # Sync-specific inputs
       sync_updated:
-        description: 'Whether sync made changes'
         required: false
         type: string
         default: 'false'
       manual_review_needed:
-        description: 'Whether manual review is needed'
         required: false
         type: string
         default: 'false'
       manual_review_files:
-        description: 'Files needing manual review'
         required: false
         type: string
         default: ''
       deleted_files_detected:
-        description: 'Whether deleted files were detected'
         required: false
         type: string
         default: 'false'
       deleted_files:
-        description: 'List of deleted files'
         required: false
         type: string
         default: ''
+
       # Security scan inputs
       critical_vulns:
-        description: 'Number of critical vulnerabilities'
         required: false
         type: string
         default: '0'
       high_vulns:
-        description: 'Number of high vulnerabilities'
         required: false
         type: string
         default: '0'
+
     secrets:
       DISCORD_WEBHOOK_URL:
         required: true
@@ -96,234 +76,109 @@ on:
 jobs:
   log-and-notify:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout for Discord action
+      - name: Checkout (for local Discord action)
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
 
-      - name: Create sync summary
-        if: inputs.event_type == 'sync'
+      # --------------------------------------------------
+      # Generate title, description, links & embed colour
+      # --------------------------------------------------
+      - name: Generate notification metadata
+        id: meta
         run: |
-          if [ "${{ inputs.sync_updated }}" == "true" ]; then
-            echo "## ✅ Sync Successful!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Auto-synced code files from walkrflocka/orpheusmorebetter to dev branch" >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ inputs.status }}" == "failure" ]; then
-            echo "## ⚠️ Sync Failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Error during sync. Check logs for details." >> $GITHUB_STEP_SUMMARY
+          REPO_URL="https://github.com/${{ github.repository }}"
+          SHORT_SHA="$(echo "${{ inputs.commit_sha }}" | cut -c1-7)"
+
+          # ----- Title -----
+          if [ -n "${{ inputs.title }}" ]; then
+            TITLE="${{ inputs.title }}"
           else
-            echo "## ℹ️ Already Up to Date" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "No new code changes from upstream repository" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ inputs.manual_review_needed }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "## 🔍 Manual Review Needed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following files changed upstream but were NOT auto-synced:" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "${{ inputs.manual_review_files }}" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Review these changes at: https://github.com/walkrflocka/orpheusmorebetter" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ inputs.deleted_files_detected }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "## 🗑️ Files Deleted Upstream" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following files/directories were deleted upstream and need manual removal:" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "${{ inputs.deleted_files }}" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Review and manually delete these if appropriate." >> $GITHUB_STEP_SUMMARY
+            case "${{ inputs.event_type }}" in
+              sync) BASE="🔄 Repository Sync" ;;
+              build) BASE="🐳 Container Build" ;;
+              security) BASE="🔍 Security Scan" ;;
+              *) BASE="ℹ️ Workflow Notification" ;;
+            esac
+
+            case "${{ inputs.status }}" in
+              success) TITLE="$BASE — Success" ;;
+              failure) TITLE="$BASE — Failed" ;;
+              warning) TITLE="$BASE — Warning" ;;
+              skipped) TITLE="$BASE — Skipped" ;;
+              *) TITLE="$BASE — Info" ;;
+            esac
           fi
 
-      - name: Create build summary
-        if: inputs.event_type == 'build' && inputs.status == 'success'
-        run: |
-          echo "## 🐳 Container Build Successful!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          # ----- Description -----
+          if [ -n "${{ inputs.description }}" ]; then
+            DESC="${{ inputs.description }}"
+          else
+            case "${{ inputs.event_type }}" in
+              sync)
+                if [ "${{ inputs.sync_updated }}" = "true" ]; then
+                  DESC="Upstream changes were successfully synced into the repository."
+                elif [ "${{ inputs.status }}" = "failure" ]; then
+                  DESC="The sync operation failed. Review workflow logs for details."
+                else
+                  DESC="No upstream changes were detected."
+                fi
+                ;;
+              build)
+                if [ "${{ inputs.status }}" = "success" ]; then
+                  DESC="Docker image built and published successfully."
+                else
+                  DESC="The container build did not complete successfully."
+                fi
+                ;;
+              security)
+                DESC="Security scan completed. Review vulnerability results."
+                ;;
+              *)
+                DESC="Workflow event notification."
+                ;;
+            esac
+          fi
+
+          # ----- Links -----
           if [ -n "${{ inputs.commit_sha }}" ]; then
-            echo "- \`chodeus/orpheusmorebetter:dev-${{ inputs.commit_sha }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- \`chodeus/orpheusmorebetter:dev-$(date +%Y%m%d)\`" >> $GITHUB_STEP_SUMMARY
+            DESC="$DESC\n\n🔗 Commit: $REPO_URL/commit/${{ inputs.commit_sha }}"
           fi
 
-      - name: Create security summary
-        if: inputs.event_type == 'security'
-        run: |
-          echo "## 🔍 Security Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Critical vulnerabilities:** ${{ inputs.critical_vulns }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **High vulnerabilities:** ${{ inputs.high_vulns }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "View detailed results in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning)" >> $GITHUB_STEP_SUMMARY
-
-      - name: Map status for Discord
-        id: map_status
-        run: |
-          STATUS="${{ inputs.status }}"
-          if [ "$STATUS" == "skipped" ]; then
-            echo "mapped_status=info" >> $GITHUB_OUTPUT
-          else
-            echo "mapped_status=$STATUS" >> $GITHUB_OUTPUT
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            DESC="$DESC\n🐳 Image: https://hub.docker.com/r/chodeus/orpheusmorebetter/tags"
           fi
 
-      - name: Send Discord notification
-        uses: ./.github/actions/discord-notify
-        with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          status: ${{ steps.map_status.outputs.mapped_status }}
-          title: ${{ inputs.title }}
-          description: ${{ inputs.description }}
-          commit_sha: ${{ inputs.commit_sha }}
-          image_tag: ${{ inputs.image_tag }}
-          include_commit_link: ${{ inputs.include_commit_link }}
-        description: 'Notification description'
-        required: false
-        type: string
-        default: ''
-      commit_sha:
-        description: 'Commit SHA for linking'
-        required: false
-        type: string
-        default: ''
-      image_tag:
-        description: 'Docker image tag'
-        required: false
-        type: string
-        default: ''
-      include_commit_link:
-        description: 'Include commit link in notification'
-        required: false
-        type: boolean
-        default: false
-      # Sync-specific inputs
-      sync_updated:
-        description: 'Whether sync made changes'
-        required: false
-        type: string
-        default: 'false'
-      manual_review_needed:
-        description: 'Whether manual review is needed'
-        required: false
-        type: string
-        default: 'false'
-      manual_review_files:
-        description: 'Files needing manual review'
-        required: false
-        type: string
-        default: ''
-      deleted_files_detected:
-        description: 'Whether deleted files were detected'
-        required: false
-        type: string
-        default: 'false'
-      deleted_files:
-        description: 'List of deleted files'
-        required: false
-        type: string
-        default: ''
-      # Security scan inputs
-      critical_vulns:
-        description: 'Number of critical vulnerabilities'
-        required: false
-        type: string
-        default: '0'
-      high_vulns:
-        description: 'Number of high vulnerabilities'
-        required: false
-        type: string
-        default: '0'
-    secrets:
-      DISCORD_WEBHOOK_URL:
-        required: true
-
-jobs:
-  log-and-notify:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout for Discord action
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - name: Create sync summary
-        if: inputs.event_type == 'sync'
-        run: |
-          if [ "${{ inputs.sync_updated }}" == "true" ]; then
-            echo "## ✅ Sync Successful!" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Auto-synced code files from walkrflocka/orpheusmorebetter to dev branch" >> $GITHUB_STEP_SUMMARY
-          elif [ "${{ inputs.status }}" == "failure" ]; then
-            echo "## ⚠️ Sync Failed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Error during sync. Check logs for details." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ℹ️ Already Up to Date" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "No new code changes from upstream repository" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ inputs.manual_review_needed }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "## 🔍 Manual Review Needed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following files changed upstream but were NOT auto-synced:" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "${{ inputs.manual_review_files }}" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Review these changes at: https://github.com/walkrflocka/orpheusmorebetter" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          if [ "${{ inputs.deleted_files_detected }}" == "true" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "## 🗑️ Files Deleted Upstream" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The following files/directories were deleted upstream and need manual removal:" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "${{ inputs.deleted_files }}" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Review and manually delete these if appropriate." >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.event_type }}" = "security" ]; then
+            DESC="$DESC\n🔍 Security: $REPO_URL/security/code-scanning"
           fi
 
-      - name: Create build summary
-        if: inputs.event_type == 'build' && inputs.status == 'success'
-        run: |
-          echo "## 🐳 Container Build Successful!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ inputs.commit_sha }}" ]; then
-            echo "- \`chodeus/orpheusmorebetter:dev-${{ inputs.commit_sha }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "- \`chodeus/orpheusmorebetter:dev-$(date +%Y%m%d)\`" >> $GITHUB_STEP_SUMMARY
-          fi
+          # ----- Embed colour -----
+          case "${{ inputs.status }}" in
+            success) COLOR="3066993" ;;   # green
+            failure) COLOR="15158332" ;; # red
+            warning) COLOR="15105570" ;; # orange
+            skipped) COLOR="9807270" ;;  # grey
+            *) COLOR="3447003" ;;         # blue/info
+          esac
 
-      - name: Create security summary
-        if: inputs.event_type == 'security'
-        run: |
-          echo "## 🔍 Security Scan Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Critical vulnerabilities:** ${{ inputs.critical_vulns }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **High vulnerabilities:** ${{ inputs.high_vulns }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "View detailed results in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning)" >> $GITHUB_STEP_SUMMARY
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          echo "description<<EOF" >> $GITHUB_OUTPUT
+          echo "$DESC" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "color=$COLOR" >> $GITHUB_OUTPUT
 
+      # -----------------------------
+      # Discord notification
+      # -----------------------------
       - name: Send Discord notification
         uses: ./.github/actions/discord-notify
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           status: ${{ inputs.status }}
-          title: ${{ inputs.title }}
-          description: ${{ inputs.description }}
+          title: ${{ steps.meta.outputs.title }}
+          description: ${{ steps.meta.outputs.description }}
+          color: ${{ steps.meta.outputs.color }}
           commit_sha: ${{ inputs.commit_sha }}
           image_tag: ${{ inputs.image_tag }}
-          include_commit_link: ${{ inputs.include_commit_link }}
+          include_commit_link: true
