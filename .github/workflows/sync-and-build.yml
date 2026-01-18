@@ -95,24 +95,20 @@ jobs:
               if [ -n "$SETUP_CHANGED" ]; then
                 echo "🔧 setup.py changed upstream - performing smart merge..."
                 
-                # Create Python script for smart merging
-                cat > /tmp/merge_setup.py << 'PYTHON_SCRIPT'
+                # Create Python script as a separate file to avoid YAML issues
+                cat > /tmp/merge_setup.py <<'EOF'
 import re
 import sys
+import subprocess
 
 def parse_requirements(setup_content):
-    """Extract install_requires list from setup.py"""
     match = re.search(r"install_requires\s*=\s*\[(.*?)\]", setup_content, re.DOTALL)
     if not match:
-        return []
-    
+        return {}
     req_str = match.group(1)
-    # Extract package names and versions
     reqs = re.findall(r"['\"]([^'\"]+)['\"]", req_str)
-    
     deps = {}
     for req in reqs:
-        # Parse package name and version constraint
         if ">=" in req:
             pkg, ver = req.split(">=", 1)
             deps[pkg.strip()] = (">=", ver.strip())
@@ -123,25 +119,18 @@ def parse_requirements(setup_content):
             pkg, ver = req.split("~=", 1)
             deps[pkg.strip()] = ("~=", ver.strip())
         else:
-            # No version specified
             deps[req.strip()] = (None, None)
-    
     return deps
 
 def merge_requirements(local_deps, upstream_deps):
-    """Merge dependencies, preferring local versions but adding new packages"""
     merged = local_deps.copy()
-    
     for pkg, (op, ver) in upstream_deps.items():
         if pkg not in merged:
-            # New dependency from upstream - add it
             merged[pkg] = (op, ver)
-            print(f"➕ Adding new dependency: {pkg}", file=sys.stderr)
-    
+            print(f"Adding new dependency: {pkg}", file=sys.stderr)
     return merged
 
 def format_requirements(deps):
-    """Format dependencies back to install_requires format"""
     formatted = []
     for pkg, (op, ver) in sorted(deps.items()):
         if op and ver:
@@ -150,33 +139,19 @@ def format_requirements(deps):
             formatted.append(f'"{pkg}"')
     return formatted
 
-# Read both versions
 with open("setup.py", "r") as f:
     local_content = f.read()
 
-import subprocess
-upstream_content = subprocess.check_output(
-    ["git", "show", "upstream/master:setup.py"], 
-    text=True
-)
+upstream_content = subprocess.check_output(["git", "show", "upstream/master:setup.py"], text=True)
 
-# Parse dependencies
 local_deps = parse_requirements(local_content)
 upstream_deps = parse_requirements(upstream_content)
 
-print(f"Local deps: {local_deps}", file=sys.stderr)
-print(f"Upstream deps: {upstream_deps}", file=sys.stderr)
-
-# Merge
 merged_deps = merge_requirements(local_deps, upstream_deps)
 
-print(f"Merged deps: {merged_deps}", file=sys.stderr)
-
-# Update setup.py with merged dependencies
 formatted_reqs = format_requirements(merged_deps)
 reqs_str = ",\n        ".join(formatted_reqs)
 
-# Replace install_requires in local content
 new_content = re.sub(
     r"install_requires\s*=\s*\[.*?\]",
     f"install_requires=[\n        {reqs_str}\n    ]",
@@ -184,12 +159,11 @@ new_content = re.sub(
     flags=re.DOTALL
 )
 
-# Write back
 with open("setup.py", "w") as f:
     f.write(new_content)
 
-print("✅ setup.py merged successfully", file=sys.stderr)
-PYTHON_SCRIPT
+print("Setup.py merged successfully", file=sys.stderr)
+EOF
                 
                 # Run the merge script
                 python3 /tmp/merge_setup.py
