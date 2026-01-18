@@ -125,8 +125,7 @@ jobs:
               if [ -z "$MANUAL_REVIEW" ]; then
                 MANUAL_REVIEW="setup.py"
               else
-                MANUAL_REVIEW="setup.py
-$MANUAL_REVIEW"
+                MANUAL_REVIEW=$(echo -e "setup.py\n${MANUAL_REVIEW}")
               fi
             fi
             
