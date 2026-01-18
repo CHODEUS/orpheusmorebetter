@@ -91,88 +91,12 @@ jobs:
                 fi
               done
               
-              # Smart merge setup.py if it changed
+              # If setup.py changed, flag for manual review
               if [ -n "$SETUP_CHANGED" ]; then
-                echo "🔧 setup.py changed upstream - performing smart merge..."
-                
-                # Create Python script as a separate file to avoid YAML issues
-                cat > /tmp/merge_setup.py <<'EOF'
-import re
-import sys
-import subprocess
-
-def parse_requirements(setup_content):
-    match = re.search(r"install_requires\s*=\s*\[(.*?)\]", setup_content, re.DOTALL)
-    if not match:
-        return {}
-    req_str = match.group(1)
-    reqs = re.findall(r"['\"]([^'\"]+)['\"]", req_str)
-    deps = {}
-    for req in reqs:
-        if ">=" in req:
-            pkg, ver = req.split(">=", 1)
-            deps[pkg.strip()] = (">=", ver.strip())
-        elif "==" in req:
-            pkg, ver = req.split("==", 1)
-            deps[pkg.strip()] = ("==", ver.strip())
-        elif "~=" in req:
-            pkg, ver = req.split("~=", 1)
-            deps[pkg.strip()] = ("~=", ver.strip())
-        else:
-            deps[req.strip()] = (None, None)
-    return deps
-
-def merge_requirements(local_deps, upstream_deps):
-    merged = local_deps.copy()
-    for pkg, (op, ver) in upstream_deps.items():
-        if pkg not in merged:
-            merged[pkg] = (op, ver)
-            print(f"Adding new dependency: {pkg}", file=sys.stderr)
-    return merged
-
-def format_requirements(deps):
-    formatted = []
-    for pkg, (op, ver) in sorted(deps.items()):
-        if op and ver:
-            formatted.append(f'"{pkg}{op}{ver}"')
-        else:
-            formatted.append(f'"{pkg}"')
-    return formatted
-
-with open("setup.py", "r") as f:
-    local_content = f.read()
-
-upstream_content = subprocess.check_output(["git", "show", "upstream/master:setup.py"], text=True)
-
-local_deps = parse_requirements(local_content)
-upstream_deps = parse_requirements(upstream_content)
-
-merged_deps = merge_requirements(local_deps, upstream_deps)
-
-formatted_reqs = format_requirements(merged_deps)
-reqs_str = ",\n        ".join(formatted_reqs)
-
-new_content = re.sub(
-    r"install_requires\s*=\s*\[.*?\]",
-    f"install_requires=[\n        {reqs_str}\n    ]",
-    local_content,
-    flags=re.DOTALL
-)
-
-with open("setup.py", "w") as f:
-    f.write(new_content)
-
-print("Setup.py merged successfully", file=sys.stderr)
-EOF
-                
-                # Run the merge script
-                python3 /tmp/merge_setup.py
-                
-                if [ $? -eq 0 ]; then
-                  git add setup.py
-                  echo "✅ Successfully merged setup.py dependencies"
+                echo "⚠️ setup.py changed upstream - adding to manual review"
+                if [ -z "$MANUAL_REVIEW" ]; then
+                  MANUAL_REVIEW="setup.py"
                 else
-                  echo "::warning::Failed to auto-merge setup.py - needs manual review"
                   MANUAL_REVIEW="$MANUAL_REVIEW
 setup.py"
                 fi
@@ -232,7 +156,7 @@ setup.py"
           if [ "$SYNC_STATUS" == "failure" ]; then
             DESCRIPTION="Error during upstream sync."
           elif [ "$UPDATED" == "true" ]; then
-            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n🔒 setup.py auto-merged (new dependencies added, your versions preserved)."
+            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n🔒 setup.py excluded from auto-sync (maintained separately)."
           else
             DESCRIPTION="Checked upstream repository - already up to date.\n\nNo sync or build required."
           fi
