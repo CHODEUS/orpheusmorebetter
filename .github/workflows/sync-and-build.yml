@@ -95,8 +95,8 @@ jobs:
               if [ -n "$SETUP_CHANGED" ]; then
                 echo "🔧 setup.py changed upstream - performing smart merge..."
                 
-                # Install Python for processing
-                python3 -c '
+                # Create Python script for smart merging
+                cat > /tmp/merge_setup.py << 'PYTHON_SCRIPT'
 import re
 import sys
 
@@ -189,7 +189,10 @@ with open("setup.py", "w") as f:
     f.write(new_content)
 
 print("✅ setup.py merged successfully", file=sys.stderr)
-'
+PYTHON_SCRIPT
+                
+                # Run the merge script
+                python3 /tmp/merge_setup.py
                 
                 if [ $? -eq 0 ]; then
                   git add setup.py
