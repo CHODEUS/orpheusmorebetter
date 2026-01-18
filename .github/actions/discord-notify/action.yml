@@ -1,184 +1,148 @@
-name: Reusable Logging and Notifications
+name: 'Discord Notification'
+description: 'Send standardized Discord notifications for workflow events'
+author: 'CHODEUS'
 
-on:
-  workflow_call:
-    inputs:
-      event_type:
-        description: 'Type of event (sync, build, security)'
-        required: true
-        type: string
-      status:
-        description: 'Status of the operation (success, failure, info, warning, skipped)'
-        required: true
-        type: string
-      title:
-        description: 'Notification title (optional – auto-generated if empty)'
-        required: false
-        type: string
-        default: ''
-      description:
-        description: 'Notification description (optional – auto-generated if empty)'
-        required: false
-        type: string
-        default: ''
-      commit_sha:
-        description: 'Commit SHA for linking'
-        required: false
-        type: string
-        default: ''
-      image_tag:
-        description: 'Docker image tag'
-        required: false
-        type: string
-        default: ''
-      include_commit_link:
-        description: 'Include commit link in notification'
-        required: false
-        type: boolean
-        default: true
+inputs:
+  webhook_url:
+    description: 'Discord webhook URL'
+    required: true
 
-      # Sync-specific inputs
-      sync_updated:
-        required: false
-        type: string
-        default: 'false'
-      manual_review_needed:
-        required: false
-        type: string
-        default: 'false'
-      manual_review_files:
-        required: false
-        type: string
-        default: ''
-      deleted_files_detected:
-        required: false
-        type: string
-        default: 'false'
-      deleted_files:
-        required: false
-        type: string
-        default: ''
+  status:
+    description: 'Status (success, failure, warning, info, skipped)'
+    required: true
 
-      # Security scan inputs
-      critical_vulns:
-        required: false
-        type: string
-        default: '0'
-      high_vulns:
-        required: false
-        type: string
-        default: '0'
+  title:
+    description: 'Notification title'
+    required: true
 
-    secrets:
-      DISCORD_WEBHOOK_URL:
-        required: true
+  description:
+    description: 'Notification description'
+    required: false
+    default: ''
 
-jobs:
-  log-and-notify:
-    runs-on: ubuntu-latest
+  commit_sha:
+    description: 'Commit SHA (optional)'
+    required: false
+    default: ''
 
-    steps:
-      - name: Checkout (for local Discord action)
-        uses: actions/checkout@v4
+  image_tag:
+    description: 'Docker image tag (optional)'
+    required: false
+    default: ''
 
-      # --------------------------------------------------
-      # Generate title, description, links & embed colour
-      # --------------------------------------------------
-      - name: Generate notification metadata
-        id: meta
-        run: |
-          REPO_URL="https://github.com/${{ github.repository }}"
-          SHORT_SHA="$(echo "${{ inputs.commit_sha }}" | cut -c1-7)"
+  include_commit_link:
+    description: 'Include commit link in description'
+    required: false
+    default: 'true'
 
-          # ----- Title -----
-          if [ -n "${{ inputs.title }}" ]; then
-            TITLE="${{ inputs.title }}"
-          else
-            case "${{ inputs.event_type }}" in
-              sync) BASE="🔄 Repository Sync" ;;
-              build) BASE="🐳 Container Build" ;;
-              security) BASE="🔍 Security Scan" ;;
-              *) BASE="ℹ️ Workflow Notification" ;;
-            esac
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.webhook_url }}" ]; then
+          echo "::warning::Discord webhook URL is empty, skipping notification"
+          exit 0
+        fi
 
-            case "${{ inputs.status }}" in
-              success) TITLE="$BASE — Success" ;;
-              failure) TITLE="$BASE — Failed" ;;
-              warning) TITLE="$BASE — Warning" ;;
-              skipped) TITLE="$BASE — Skipped" ;;
-              *) TITLE="$BASE — Info" ;;
-            esac
+        VALID_STATUSES="success failure info warning skipped"
+        if [[ ! " $VALID_STATUSES " =~ " ${{ inputs.status }} " ]]; then
+          echo "::error::Invalid status '${{ inputs.status }}'. Must be one of: $VALID_STATUSES"
+          exit 1
+        fi
+
+    - name: Send Discord notification
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        STATUS: ${{ inputs.status }}
+        TITLE: ${{ inputs.title }}
+        DESCRIPTION: ${{ inputs.description }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+        IMAGE_TAG: ${{ inputs.image_tag }}
+        INCLUDE_COMMIT: ${{ inputs.include_commit_link }}
+      run: |
+        # ----------------------------
+        # Emoji + colour by status
+        # ----------------------------
+        case "$STATUS" in
+          success)
+            COLOR="3066993"    # Green
+            EMOJI="✅"
+            ;;
+          failure)
+            COLOR="15158332"   # Red
+            EMOJI="❌"
+            ;;
+          warning)
+            COLOR="15105570"   # Orange
+            EMOJI="⚠️"
+            ;;
+          skipped)
+            COLOR="9807270"    # Grey
+            EMOJI="⏭️"
+            ;;
+          info|*)
+            COLOR="3447003"    # Blue
+            EMOJI="ℹ️"
+            ;;
+        esac
+
+        # ----------------------------
+        # Build description
+        # ----------------------------
+        FULL_DESCRIPTION="$DESCRIPTION"
+
+        # Commit link
+        if [ "$INCLUDE_COMMIT" = "true" ]; then
+          COMMIT="${COMMIT_SHA:-${{ github.sha }}}"
+          if [ -n "$COMMIT" ]; then
+            SHORT_SHA="${COMMIT:0:7}"
+            FULL_DESCRIPTION="${FULL_DESCRIPTION}\n\n🔗 **Commit:** https://github.com/${{ github.repository }}/commit/${COMMIT}"
           fi
+        fi
 
-          # ----- Description -----
-          if [ -n "${{ inputs.description }}" ]; then
-            DESC="${{ inputs.description }}"
-          else
-            case "${{ inputs.event_type }}" in
-              sync)
-                if [ "${{ inputs.sync_updated }}" = "true" ]; then
-                  DESC="Upstream changes were successfully synced into the repository."
-                elif [ "${{ inputs.status }}" = "failure" ]; then
-                  DESC="The sync operation failed. Review workflow logs for details."
-                else
-                  DESC="No upstream changes were detected."
-                fi
-                ;;
-              build)
-                if [ "${{ inputs.status }}" = "success" ]; then
-                  DESC="Docker image built and published successfully."
-                else
-                  DESC="The container build did not complete successfully."
-                fi
-                ;;
-              security)
-                DESC="Security scan completed. Review vulnerability results."
-                ;;
-              *)
-                DESC="Workflow event notification."
-                ;;
-            esac
+        # Docker image
+        if [ -n "$IMAGE_TAG" ]; then
+          FULL_DESCRIPTION="${FULL_DESCRIPTION}\n🐳 **Image:** \`${IMAGE_TAG}\`"
+        fi
+
+        # Workflow run link
+        FULL_DESCRIPTION="${FULL_DESCRIPTION}\n\n▶️ [View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+        # ----------------------------
+        # Send Discord embed
+        # ----------------------------
+        PAYLOAD=$(jq -n \
+          --arg title "${EMOJI} ${TITLE}" \
+          --arg description "$FULL_DESCRIPTION" \
+          --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --arg repo "${{ github.repository }}" \
+          --argjson color "$COLOR" \
+          '{
+            embeds: [{
+              title: $title,
+              description: $description,
+              color: $color,
+              timestamp: $timestamp,
+              footer: { text: $repo }
+            }]
+          }')
+
+        HTTP_CODE=$(curl -s -o /tmp/discord_response.txt -w "%{http_code}" \
+          -H "Content-Type: application/json" \
+          -d "$PAYLOAD" \
+          "$WEBHOOK_URL")
+
+        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          echo "✓ Discord notification sent successfully (HTTP $HTTP_CODE)"
+        else
+          echo "::warning::Discord notification failed (HTTP $HTTP_CODE)"
+          if [ -f /tmp/discord_response.txt ]; then
+            echo "Response:"
+            cat /tmp/discord_response.txt
           fi
+        fi
 
-          # ----- Links -----
-          if [ -n "${{ inputs.commit_sha }}" ]; then
-            DESC="$DESC\n\n🔗 Commit: $REPO_URL/commit/${{ inputs.commit_sha }}"
-          fi
-
-          if [ -n "${{ inputs.image_tag }}" ]; then
-            DESC="$DESC\n🐳 Image: https://hub.docker.com/r/chodeus/orpheusmorebetter/tags"
-          fi
-
-          if [ "${{ inputs.event_type }}" = "security" ]; then
-            DESC="$DESC\n🔍 Security: $REPO_URL/security/code-scanning"
-          fi
-
-          # ----- Embed colour -----
-          case "${{ inputs.status }}" in
-            success) COLOR="3066993" ;;   # green
-            failure) COLOR="15158332" ;; # red
-            warning) COLOR="15105570" ;; # orange
-            skipped) COLOR="9807270" ;;  # grey
-            *) COLOR="3447003" ;;         # blue/info
-          esac
-
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "description<<EOF" >> $GITHUB_OUTPUT
-          echo "$DESC" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "color=$COLOR" >> $GITHUB_OUTPUT
-
-      # -----------------------------
-      # Discord notification
-      # -----------------------------
-      - name: Send Discord notification
-        uses: ./.github/actions/discord-notify
-        with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          status: ${{ inputs.status }}
-          title: ${{ steps.meta.outputs.title }}
-          description: ${{ steps.meta.outputs.description }}
-          color: ${{ steps.meta.outputs.color }}
-          commit_sha: ${{ inputs.commit_sha }}
-          image_tag: ${{ inputs.image_tag }}
-          include_commit_link: true
+        rm -f /tmp/discord_response.txt
