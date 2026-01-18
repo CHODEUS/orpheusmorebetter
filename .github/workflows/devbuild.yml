@@ -115,33 +115,16 @@ jobs:
           echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
       
       - name: Send build notification
-        if: always() && env.DISCORD_WEBHOOK != ''
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          BUILD_STATUS="${{ job.status }}"
-          
-          if [ "$BUILD_STATUS" == "success" ]; then
-            STATUS="✅ Success"
-            COLOR="3066993"
-            DESCRIPTION="Manual dev build completed successfully!\n\n🔍 Security scan completed - check GitHub Security tab for results."
-          else
-            STATUS="❌ Failed"
-            COLOR="15158332"
-            DESCRIPTION="Manual dev build failed. Check the workflow logs for details."
-          fi
-          
-          curl -H "Content-Type: application/json" \
-               -d "{
-                 \"embeds\": [{
-                   \"title\": \"Manual Dev Build Complete\",
-                   \"description\": \"**Status:** $STATUS\n**Image:** \\\`chodeus/orpheusmorebetter:dev\\\`\n**Commit:** \\\`${GITHUB_SHA:0:7}\\\`\n**Trigger:** Push to dev branch\n\n$DESCRIPTION\",
-                   \"color\": $COLOR,
-                   \"url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
-                   \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-                   \"footer\": {
-                     \"text\": \"${{ github.repository }}\"
-                   }
-                 }]
-               }" \
-               $DISCORD_WEBHOOK || echo "Discord notification failed (non-critical)"
+        if: always()
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: ${{ job.status }}
+          title: "Manual Dev Build Complete"
+          description: |
+            Manual dev build from push to dev branch.
+            
+            🔍 Security scan completed - check GitHub Security tab for results.
+          commit_sha: ${{ github.sha }}
+          image_tag: "chodeus/orpheusmorebetter:dev"
+          include_commit_link: true
