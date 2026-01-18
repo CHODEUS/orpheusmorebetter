@@ -82,6 +82,8 @@ jobs:
     steps:
       - name: Checkout for Discord action
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: Create sync summary
         if: inputs.event_type == 'sync'
