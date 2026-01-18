@@ -1,0 +1,158 @@
+name: Reusable Logging and Notifications
+
+on:
+  workflow_call:
+    inputs:
+      event_type:
+        description: 'Type of event (sync, build, security)'
+        required: true
+        type: string
+      status:
+        description: 'Status of the operation (success, failure, info, warning)'
+        required: true
+        type: string
+      title:
+        description: 'Notification title'
+        required: true
+        type: string
+      description:
+        description: 'Notification description'
+        required: false
+        type: string
+        default: ''
+      commit_sha:
+        description: 'Commit SHA for linking'
+        required: false
+        type: string
+        default: ''
+      image_tag:
+        description: 'Docker image tag'
+        required: false
+        type: string
+        default: ''
+      include_commit_link:
+        description: 'Include commit link in notification'
+        required: false
+        type: boolean
+        default: false
+      # Sync-specific inputs
+      sync_updated:
+        description: 'Whether sync made changes'
+        required: false
+        type: string
+        default: 'false'
+      manual_review_needed:
+        description: 'Whether manual review is needed'
+        required: false
+        type: string
+        default: 'false'
+      manual_review_files:
+        description: 'Files needing manual review'
+        required: false
+        type: string
+        default: ''
+      deleted_files_detected:
+        description: 'Whether deleted files were detected'
+        required: false
+        type: string
+        default: 'false'
+      deleted_files:
+        description: 'List of deleted files'
+        required: false
+        type: string
+        default: ''
+      # Security scan inputs
+      critical_vulns:
+        description: 'Number of critical vulnerabilities'
+        required: false
+        type: string
+        default: '0'
+      high_vulns:
+        description: 'Number of high vulnerabilities'
+        required: false
+        type: string
+        default: '0'
+    secrets:
+      DISCORD_WEBHOOK_URL:
+        required: true
+
+jobs:
+  log-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout for Discord action
+        uses: actions/checkout@v4
+
+      - name: Create sync summary
+        if: inputs.event_type == 'sync'
+        run: |
+          if [ "${{ inputs.sync_updated }}" == "true" ]; then
+            echo "## ✅ Sync Successful!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Auto-synced code files from walkrflocka/orpheusmorebetter to dev branch" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ inputs.status }}" == "failure" ]; then
+            echo "## ⚠️ Sync Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Error during sync. Check logs for details." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ℹ️ Already Up to Date" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No new code changes from upstream repository" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ inputs.manual_review_needed }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 🔍 Manual Review Needed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following files changed upstream but were NOT auto-synced:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ inputs.manual_review_files }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review these changes at: https://github.com/walkrflocka/orpheusmorebetter" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "${{ inputs.deleted_files_detected }}" == "true" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 🗑️ Files Deleted Upstream" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following files/directories were deleted upstream and need manual removal:" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ inputs.deleted_files }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review and manually delete these if appropriate." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create build summary
+        if: inputs.event_type == 'build' && inputs.status == 'success'
+        run: |
+          echo "## 🐳 Container Build Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "- \`chodeus/orpheusmorebetter:dev-${{ inputs.commit_sha }}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- \`chodeus/orpheusmorebetter:dev-$(date +%Y%m%d)\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Create security summary
+        if: inputs.event_type == 'security'
+        run: |
+          echo "## 🔍 Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Critical vulnerabilities:** ${{ inputs.critical_vulns }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **High vulnerabilities:** ${{ inputs.high_vulns }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed results in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send Discord notification
+        uses: ./.github/actions/discord-notify
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          status: ${{ inputs.status }}
+          title: ${{ inputs.title }}
+          description: ${{ inputs.description }}
+          commit_sha: ${{ inputs.commit_sha }}
+          image_tag: ${{ inputs.image_tag }}
+          include_commit_link: ${{ inputs.include_commit_link }}
