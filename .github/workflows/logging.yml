@@ -153,21 +153,11 @@ jobs:
             DESC="$DESC\n🔍 Security: $REPO_URL/security/code-scanning"
           fi
 
-          # ----- Embed colour -----
-          case "${{ inputs.status }}" in
-            success) COLOR="3066993" ;;   # green
-            failure) COLOR="15158332" ;; # red
-            warning) COLOR="15105570" ;; # orange
-            skipped) COLOR="9807270" ;;  # grey
-            *) COLOR="3447003" ;;         # blue/info
-          esac
-
           echo "title=$TITLE" >> $GITHUB_OUTPUT
           echo "description<<EOF" >> $GITHUB_OUTPUT
           echo "$DESC" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          echo "color=$COLOR" >> $GITHUB_OUTPUT
-
+          
       # -----------------------------
       # Discord notification
       # -----------------------------
