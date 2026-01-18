@@ -6,7 +6,7 @@ on:
       keep_commits:
         description: 'Comma-separated list of commit SHAs to keep in chronological order (oldest to newest)'
         required: false
-        default: 'aa34f0f75076cdba86b12aa8e8c8e100610b0c8d,7bb39c2a58ab61d933a102fee7bd5e52af1e1759,abf88660ccfe9edf110fa98e98f788d106a0b1fb'
+        default: 'aa34f0f75076cdba86b12aa8e8c8e100610b0c8d,7bb39c2a58ab61d933a102fee7bd5e52af1e1759'
       squashed_commit_message:
         description: 'Message for the squashed commit'
         required: false
