@@ -6,17 +6,6 @@ updates:
       interval: "weekly"
     target-branch: "dev"
     open-pull-requests-limit: 5
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
-        # Ignore setup.py dependencies (synced from upstream)
-    allow:
-      - dependency-name: "beautifulsoup4"
-      - dependency-name: "mutagen"
-      - dependency-name: "Requests"
-      - dependency-name: "setuptools"
-      - dependency-name: "lxml"
-      - dependency-name: "pydantic"
     
   - package-ecosystem: "docker"
     directory: "/"
