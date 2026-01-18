@@ -145,28 +145,42 @@ jobs:
       - name: Build notification description
         id: notification
         if: always()
+        env:
+          SYNC_STATUS: ${{ steps.sync.outcome }}
+          UPDATED: ${{ steps.sync.outputs.updated }}
+          MANUAL_REVIEW_NEEDED: ${{ steps.sync.outputs.manual_review_needed }}
+          MANUAL_REVIEW_FILES: ${{ steps.sync.outputs.manual_review_files }}
+          DELETED_FILES_DETECTED: ${{ steps.sync.outputs.deleted_files_detected }}
+          DELETED_FILES: ${{ steps.sync.outputs.deleted_files }}
         run: |
-          SYNC_STATUS="${{ steps.sync.outcome }}"
-          UPDATED="${{ steps.sync.outputs.updated }}"
-          
           if [ "$SYNC_STATUS" == "failure" ]; then
             DESCRIPTION="Error during upstream sync."
           elif [ "$UPDATED" == "true" ]; then
-            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n🔒 setup.py excluded from auto-sync (maintained separately)."
+            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.
+
+🔨 Docker build has been triggered.
+
+🔒 setup.py excluded from auto-sync (maintained separately)."
           else
-            DESCRIPTION="Checked upstream repository - already up to date.\n\nNo sync or build required."
+            DESCRIPTION="Checked upstream repository - already up to date.
+
+No sync or build required."
           fi
           
-          if [ "${{ steps.sync.outputs.manual_review_needed }}" == "true" ]; then
-            DESCRIPTION="${DESCRIPTION}\n\n**Manual Review Required**\nSome files changed but need your review:\n\`\`\`\n${{ steps.sync.outputs.manual_review_files }}\n\`\`\`"
+          if [ "$MANUAL_REVIEW_NEEDED" == "true" ]; then
+            DESCRIPTION=$(printf "%s\n\n**Manual Review Required**\nSome files changed but need your review:\n\`\`\`\n%s\n\`\`\`" \
+              "$DESCRIPTION" \
+              "$MANUAL_REVIEW_FILES")
           fi
           
-          if [ "${{ steps.sync.outputs.deleted_files_detected }}" == "true" ]; then
-            DESCRIPTION="${DESCRIPTION}\n\n**Files Deleted Upstream**\nThese files/directories were deleted and need manual removal:\n\`\`\`\n${{ steps.sync.outputs.deleted_files }}\n\`\`\`"
+          if [ "$DELETED_FILES_DETECTED" == "true" ]; then
+            DESCRIPTION=$(printf "%s\n\n**Files Deleted Upstream**\nThese files/directories were deleted and need manual removal:\n\`\`\`\n%s\n\`\`\`" \
+              "$DESCRIPTION" \
+              "$DELETED_FILES")
           fi
           
           echo "description<<EOF" >> $GITHUB_OUTPUT
-          echo -e "$DESCRIPTION" >> $GITHUB_OUTPUT
+          echo "$DESCRIPTION" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
   log-sync:
