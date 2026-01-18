@@ -157,25 +157,39 @@ jobs:
           if [ "$SYNC_STATUS" == "failure" ]; then
             DESCRIPTION="Error during upstream sync."
           elif [ "$UPDATED" == "true" ]; then
-            DESCRIPTION=$(printf "Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n🔒 setup.py excluded from auto-sync (maintained separately).")
+            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.
+
+🔨 Docker build has been triggered.
+
+🔒 setup.py excluded from auto-sync (maintained separately)."
           else
-            DESCRIPTION=$(printf "Checked upstream repository - already up to date.\n\nNo sync or build required.")
+            DESCRIPTION="Checked upstream repository - already up to date.
+
+No sync or build required."
           fi
           
           if [ "$MANUAL_REVIEW_NEEDED" == "true" ]; then
-            DESCRIPTION=$(printf "%s\n\n**Manual Review Required**\nSome files changed but need your review:\n\`\`\`\n%s\n\`\`\`" \
-              "$DESCRIPTION" \
-              "$MANUAL_REVIEW_FILES")
+            DESCRIPTION="${DESCRIPTION}
+
+**Manual Review Required**
+Some files changed but need your review:
+\`\`\`
+${MANUAL_REVIEW_FILES}
+\`\`\`"
           fi
           
           if [ "$DELETED_FILES_DETECTED" == "true" ]; then
-            DESCRIPTION=$(printf "%s\n\n**Files Deleted Upstream**\nThese files/directories were deleted and need manual removal:\n\`\`\`\n%s\n\`\`\`" \
-              "$DESCRIPTION" \
-              "$DELETED_FILES")
+            DESCRIPTION="${DESCRIPTION}
+
+**Files Deleted Upstream**
+These files/directories were deleted and need manual removal:
+\`\`\`
+${DELETED_FILES}
+\`\`\`"
           fi
           
           echo "description<<EOF" >> $GITHUB_OUTPUT
-          printf "%s\n" "$DESCRIPTION" >> $GITHUB_OUTPUT
+          echo "$DESCRIPTION" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
   log-sync:
@@ -306,7 +320,7 @@ jobs:
       event_type: 'build'
       status: ${{ needs.build.result }}
       title: ${{ needs.build.result == 'skipped' && 'Docker Build Skipped (Dev)' || 'Docker Build Complete (Dev)' }}
-      description: ${{ needs.build.result == 'skipped' && 'No code changes detected - build skipped.' || 'Automated build from upstream sync.\n\n🔍 Security scan completed - check GitHub Security tab for results.' }}
+      description: ${{ needs.build.result == 'skipped' && 'No code changes detected - build skipped.' || 'Automated build from upstream sync. Security scan completed - check GitHub Security tab for results.' }}
       commit_sha: ${{ github.sha }}
       image_tag: "chodeus/orpheusmorebetter:dev"
       include_commit_link: true
