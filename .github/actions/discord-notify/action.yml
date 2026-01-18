@@ -93,35 +93,33 @@ runs:
         esac
 
         # ----------------------------
-        # Build description using printf for proper formatting
+        # Build description - write directly to temp file for proper newline handling
         # ----------------------------
-        FULL_DESCRIPTION="$DESCRIPTION"
+        TEMP_DESC=$(mktemp)
+        echo "$DESCRIPTION" > "$TEMP_DESC"
 
         # Commit link
         if [ "$INCLUDE_COMMIT" = "true" ]; then
           COMMIT="${COMMIT_SHA:-$GITHUB_SHA}"
           if [ -n "$COMMIT" ]; then
             SHORT_SHA="${COMMIT:0:7}"
-            FULL_DESCRIPTION=$(printf "%s\n\n🔗 **Commit:** [\`%s\`](https://github.com/%s/commit/%s)" \
-              "$FULL_DESCRIPTION" \
-              "$SHORT_SHA" \
-              "$GITHUB_REPO" \
-              "$COMMIT")
+            echo "" >> "$TEMP_DESC"
+            echo "🔗 **Commit:** [\`$SHORT_SHA\`](https://github.com/$GITHUB_REPO/commit/$COMMIT)" >> "$TEMP_DESC"
           fi
         fi
 
         # Docker image
         if [ -n "$IMAGE_TAG" ]; then
-          FULL_DESCRIPTION=$(printf "%s\n🐳 **Image:** \`%s\`" \
-            "$FULL_DESCRIPTION" \
-            "$IMAGE_TAG")
+          echo "🐳 **Image:** \`$IMAGE_TAG\`" >> "$TEMP_DESC"
         fi
 
         # Workflow run link
-        FULL_DESCRIPTION=$(printf "%s\n\n▶️ [View workflow run](https://github.com/%s/actions/runs/%s)" \
-          "$FULL_DESCRIPTION" \
-          "$GITHUB_REPO" \
-          "$GITHUB_RUN_ID")
+        echo "" >> "$TEMP_DESC"
+        echo "▶️ [View workflow run](https://github.com/$GITHUB_REPO/actions/runs/$GITHUB_RUN_ID)" >> "$TEMP_DESC"
+
+        # Read the final description
+        FULL_DESCRIPTION=$(cat "$TEMP_DESC")
+        rm "$TEMP_DESC"
 
         # ----------------------------
         # Send Discord embed
