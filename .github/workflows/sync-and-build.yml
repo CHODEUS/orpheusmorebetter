@@ -156,15 +156,9 @@ jobs:
           if [ "$SYNC_STATUS" == "failure" ]; then
             DESCRIPTION="Error during upstream sync."
           elif [ "$UPDATED" == "true" ]; then
-            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.
-
-🔨 Docker build has been triggered.
-
-🔒 setup.py excluded from auto-sync (maintained separately)."
+            DESCRIPTION=$(printf "Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n🔒 setup.py excluded from auto-sync (maintained separately).")
           else
-            DESCRIPTION="Checked upstream repository - already up to date.
-
-No sync or build required."
+            DESCRIPTION=$(printf "Checked upstream repository - already up to date.\n\nNo sync or build required.")
           fi
           
           if [ "$MANUAL_REVIEW_NEEDED" == "true" ]; then
@@ -180,7 +174,7 @@ No sync or build required."
           fi
           
           echo "description<<EOF" >> $GITHUB_OUTPUT
-          echo "$DESCRIPTION" >> $GITHUB_OUTPUT
+          printf "%s\n" "$DESCRIPTION" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
   log-sync:
