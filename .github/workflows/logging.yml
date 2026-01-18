@@ -86,13 +86,16 @@ jobs:
       # --------------------------------------------------
       - name: Generate notification metadata
         id: meta
+        env:
+          INPUT_DESCRIPTION: ${{ inputs.description }}
+          INPUT_TITLE: ${{ inputs.title }}
         run: |
           REPO_URL="https://github.com/${{ github.repository }}"
           SHORT_SHA="$(echo "${{ inputs.commit_sha }}" | cut -c1-7)"
 
           # ----- Title -----
-          if [ -n "${{ inputs.title }}" ]; then
-            TITLE="${{ inputs.title }}"
+          if [ -n "$INPUT_TITLE" ]; then
+            TITLE="$INPUT_TITLE"
           else
             case "${{ inputs.event_type }}" in
               sync) BASE="🔄 Repository Sync" ;;
@@ -111,8 +114,8 @@ jobs:
           fi
 
           # ----- Description -----
-          if [ -n "${{ inputs.description }}" ]; then
-            DESC="${{ inputs.description }}"
+          if [ -n "$INPUT_DESCRIPTION" ]; then
+            DESC="$INPUT_DESCRIPTION"
           else
             case "${{ inputs.event_type }}" in
               sync)
