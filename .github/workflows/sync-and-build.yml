@@ -91,17 +91,6 @@ jobs:
                 fi
               done
               
-              # If setup.py changed, flag for manual review
-              if [ -n "$SETUP_CHANGED" ]; then
-                echo "⚠️ setup.py changed upstream - adding to manual review"
-                if [ -z "$MANUAL_REVIEW" ]; then
-                  MANUAL_REVIEW="setup.py"
-                else
-                  MANUAL_REVIEW="$MANUAL_REVIEW
-setup.py"
-                fi
-              fi
-              
               if [ -n "$DELETED_FILES" ]; then
                 echo "deleted_files_detected=true" >> $GITHUB_OUTPUT
                 echo "deleted_files<<EOF" >> $GITHUB_OUTPUT
@@ -132,6 +121,199 @@ setup.py"
             fi
             
             MANUAL_REVIEW=$(echo "$UPSTREAM_CHANGES" | grep -vE "$AUTO_SYNC_PATTERN" || true)
+            
+            # Add setup.py to manual review if it changed
+            if [ -n "$SETUP_CHANGED" ]; then
+              echo "⚠️ setup.py changed upstream - needs manual review"
+              MANUAL_REVIEW="${MANUAL_REVIEW}"
+              echo "⚠️ These files changed but need manual review:"
+              echo "$MANUAL_REVIEW"
+              echo "manual_review_needed=true" >> $GITHUB_OUTPUT
+              echo "manual_review_files<<EOF" >> $GITHUB_OUTPUT
+              echo "$MANUAL_REVIEW" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "✅ Already up to date with upstream"
+            echo "updated=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Build notification description
+        id: notification
+        if: always()
+        run: |
+          SYNC_STATUS="${{ steps.sync.outcome }}"
+          UPDATED="${{ steps.sync.outputs.updated }}"
+          
+          if [ "$SYNC_STATUS" == "failure" ]; then
+            DESCRIPTION="Error during upstream sync."
+          elif [ "$UPDATED" == "true" ]; then
+            DESCRIPTION="Successfully synced code files from upstream and pushed to dev branch.\n\n🔨 Docker build has been triggered.\n\n🔒 setup.py excluded from auto-sync (maintained separately)."
+          else
+            DESCRIPTION="Checked upstream repository - already up to date.\n\nNo sync or build required."
+          fi
+          
+          if [ "${{ steps.sync.outputs.manual_review_needed }}" == "true" ]; then
+            DESCRIPTION="${DESCRIPTION}\n\n**Manual Review Required**\nSome files changed but need your review:\n\`\`\`\n${{ steps.sync.outputs.manual_review_files }}\n\`\`\`"
+          fi
+          
+          if [ "${{ steps.sync.outputs.deleted_files_detected }}" == "true" ]; then
+            DESCRIPTION="${DESCRIPTION}\n\n**Files Deleted Upstream**\nThese files/directories were deleted and need manual removal:\n\`\`\`\n${{ steps.sync.outputs.deleted_files }}\n\`\`\`"
+          fi
+          
+          echo "description<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$DESCRIPTION" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  log-sync:
+    needs: sync
+    if: always()
+    uses: ./.github/workflows/logging.yml
+    with:
+      event_type: 'sync'
+      status: ${{ needs.sync.result == 'failure' && 'failure' || (needs.sync.outputs.updated == 'true' && 'success' || 'info') }}
+      title: ${{ needs.sync.result == 'failure' && 'Upstream Sync Failed' || (needs.sync.outputs.updated == 'true' && 'Code Auto-Synced from Upstream' || 'No Changes Detected') }}
+      description: ${{ needs.sync.outputs.notification_description }}
+      sync_updated: ${{ needs.sync.outputs.updated }}
+      manual_review_needed: ${{ needs.sync.outputs.manual_review_needed }}
+      manual_review_files: ${{ needs.sync.outputs.manual_review_files }}
+      deleted_files_detected: ${{ needs.sync.outputs.deleted_files_detected }}
+      deleted_files: ${{ needs.sync.outputs.deleted_files }}
+      include_commit_link: false
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  build:
+    needs: sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: needs.sync.outputs.updated == 'true' || github.event.inputs.force_build == 'true'
+
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    outputs:
+      critical_vulns: ${{ steps.vuln_count.outputs.critical }}
+      high_vulns: ${{ steps.vuln_count.outputs.high }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+      
+      - name: Ensure we have latest changes
+        run: |
+          git fetch origin dev
+          git reset --hard origin/dev
+          echo "Building from commit: $(git rev-parse HEAD)"
+          echo "Commit message: $(git log -1 --pretty=%B)"
+      
+      - name: Verify orpheusmorebetter script exists
+        run: |
+          if [ ! -f "orpheusmorebetter" ]; then
+            echo "::error::orpheusmorebetter script not found!"
+            exit 1
+          fi
+          echo "✓ orpheusmorebetter script found"
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: chodeus/orpheusmorebetter
+          tags: |
+            type=raw,value=dev
+            type=sha,prefix=dev-
+            type=raw,value=dev-{{date 'YYYYMMDD'}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=chodeus/orpheusmorebetter:dev
+          cache-to: type=inline
+          provenance: true
+          sbom: true
+          build-args: |
+            VERSION=${{ github.sha }}
+            GIT_BRANCH=dev
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'chodeus/orpheusmorebetter:dev'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+      
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+      
+      - name: Count vulnerabilities
+        id: vuln_count
+        if: always()
+        run: |
+          if [ -f trivy-results.sarif ]; then
+            CRITICAL=$(jq '[.runs[].results[] | select(.level=="error")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+            HIGH=$(jq '[.runs[].results[] | select(.level=="warning")] | length' trivy-results.sarif 2>/dev/null || echo "0")
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+          else
+            echo "critical=0" >> $GITHUB_OUTPUT
+            echo "high=0" >> $GITHUB_OUTPUT
+          fi
+
+  log-build:
+    needs: build
+    if: always()
+    uses: ./.github/workflows/logging.yml
+    with:
+      event_type: 'build'
+      status: ${{ needs.build.result }}
+      title: "Docker Build Complete (Dev)"
+      description: "Automated build from upstream sync.\n\n🔍 Security scan completed - check GitHub Security tab for results."
+      commit_sha: ${{ github.sha }}
+      image_tag: "chodeus/orpheusmorebetter:dev"
+      include_commit_link: true
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+  log-security:
+    needs: build
+    if: always() && needs.build.result != 'skipped'
+    uses: ./.github/workflows/logging.yml
+    with:
+      event_type: 'security'
+      status: 'info'
+      title: "Security Scan Results"
+      critical_vulns: ${{ needs.build.outputs.critical_vulns }}
+      high_vulns: ${{ needs.build.outputs.high_vulns }}
+    secrets:
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+\n'"setup.py"
+            fi
             
             if [ -n "$MANUAL_REVIEW" ]; then
               echo "⚠️ These files changed but need manual review:"
