@@ -296,8 +296,8 @@ jobs:
     with:
       event_type: 'build'
       status: ${{ needs.build.result }}
-      title: "Docker Build Complete (Dev)"
-      description: "Automated build from upstream sync.\n\n🔍 Security scan completed - check GitHub Security tab for results."
+      title: ${{ needs.build.result == 'skipped' && 'Docker Build Skipped (Dev)' || 'Docker Build Complete (Dev)' }}
+      description: ${{ needs.build.result == 'skipped' && 'No code changes detected - build skipped.' || 'Automated build from upstream sync.\n\n🔍 Security scan completed - check GitHub Security tab for results.' }}
       commit_sha: ${{ github.sha }}
       image_tag: "chodeus/orpheusmorebetter:dev"
       include_commit_link: true
