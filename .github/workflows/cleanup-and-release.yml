@@ -109,22 +109,28 @@ jobs:
             
             if [ "$PARENT_COUNT" -gt 1 ]; then
               echo "  ℹ Merge commit detected - using mainline parent"
-              if git cherry-pick -m 1 $commit; then
+              if git cherry-pick -m 1 $commit 2>&1 | tee /tmp/cherry-pick-output.txt; then
                 echo "  ✓ Success"
               else
-                echo "  ⚠ Conflict - applying manually"
-                git checkout --theirs .
-                git add -A
-                git cherry-pick --continue --no-edit || git commit --no-edit
+                # Check if it's an empty commit
+                if grep -q "previous cherry-pick is now empty" /tmp/cherry-pick-output.txt; then
+                  echo "  ℹ Empty merge commit - skipping"
+                  git cherry-pick --skip
+                else
+                  echo "  ⚠ Conflict - applying manually"
+                  git checkout --theirs . 2>/dev/null || true
+                  git add -A
+                  git cherry-pick --continue --no-edit 2>/dev/null || git cherry-pick --skip
+                fi
               fi
             else
               if git cherry-pick $commit; then
                 echo "  ✓ Success"
               else
                 echo "  ⚠ Conflict - applying manually"
-                git checkout --theirs .
+                git checkout --theirs . 2>/dev/null || true
                 git add -A
-                git cherry-pick --continue --no-edit || git commit --no-edit
+                git cherry-pick --continue --no-edit 2>/dev/null || git commit --no-edit
               fi
             fi
           done
