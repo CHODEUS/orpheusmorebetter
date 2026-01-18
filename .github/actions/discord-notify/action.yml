@@ -62,6 +62,9 @@ runs:
         COMMIT_SHA: ${{ inputs.commit_sha }}
         IMAGE_TAG: ${{ inputs.image_tag }}
         INCLUDE_COMMIT: ${{ inputs.include_commit_link }}
+        GITHUB_REPO: ${{ github.repository }}
+        GITHUB_SHA: ${{ github.sha }}
+        GITHUB_RUN_ID: ${{ github.run_id }}
       run: |
         # ----------------------------
         # Emoji + colour by status
@@ -90,35 +93,44 @@ runs:
         esac
 
         # ----------------------------
-        # Build description
+        # Build description using printf for proper formatting
         # ----------------------------
         FULL_DESCRIPTION="$DESCRIPTION"
 
         # Commit link
         if [ "$INCLUDE_COMMIT" = "true" ]; then
-          COMMIT="${COMMIT_SHA:-${{ github.sha }}}"
+          COMMIT="${COMMIT_SHA:-$GITHUB_SHA}"
           if [ -n "$COMMIT" ]; then
             SHORT_SHA="${COMMIT:0:7}"
-            FULL_DESCRIPTION="${FULL_DESCRIPTION}\n\n🔗 **Commit:** https://github.com/${{ github.repository }}/commit/${COMMIT}"
+            FULL_DESCRIPTION=$(printf "%s\n\n🔗 **Commit:** [\`%s\`](https://github.com/%s/commit/%s)" \
+              "$FULL_DESCRIPTION" \
+              "$SHORT_SHA" \
+              "$GITHUB_REPO" \
+              "$COMMIT")
           fi
         fi
 
         # Docker image
         if [ -n "$IMAGE_TAG" ]; then
-          FULL_DESCRIPTION="${FULL_DESCRIPTION}\n🐳 **Image:** \`${IMAGE_TAG}\`"
+          FULL_DESCRIPTION=$(printf "%s\n🐳 **Image:** \`%s\`" \
+            "$FULL_DESCRIPTION" \
+            "$IMAGE_TAG")
         fi
 
         # Workflow run link
-        FULL_DESCRIPTION="${FULL_DESCRIPTION}\n\n▶️ [View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        FULL_DESCRIPTION=$(printf "%s\n\n▶️ [View workflow run](https://github.com/%s/actions/runs/%s)" \
+          "$FULL_DESCRIPTION" \
+          "$GITHUB_REPO" \
+          "$GITHUB_RUN_ID")
 
         # ----------------------------
         # Send Discord embed
         # ----------------------------
-        PAYLOAD=$(jq -n \
+        PAYLOAD=$(jq -nc \
           --arg title "${EMOJI} ${TITLE}" \
           --arg description "$FULL_DESCRIPTION" \
           --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-          --arg repo "${{ github.repository }}" \
+          --arg repo "$GITHUB_REPO" \
           --argjson color "$COLOR" \
           '{
             embeds: [{
