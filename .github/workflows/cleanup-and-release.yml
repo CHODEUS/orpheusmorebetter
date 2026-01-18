@@ -103,14 +103,29 @@ jobs:
           echo "Cherry-picking commits to keep..."
           for commit in "${KEEP_COMMITS[@]}"; do
             echo "Cherry-picking: $commit"
-            if git cherry-pick $commit; then
-              echo "  ✓ Success"
+            
+            # Check if this is a merge commit
+            PARENT_COUNT=$(git cat-file -p $commit | grep "^parent" | wc -l)
+            
+            if [ "$PARENT_COUNT" -gt 1 ]; then
+              echo "  ℹ Merge commit detected - using mainline parent"
+              if git cherry-pick -m 1 $commit; then
+                echo "  ✓ Success"
+              else
+                echo "  ⚠ Conflict - applying manually"
+                git checkout --theirs .
+                git add -A
+                git cherry-pick --continue --no-edit || git commit --no-edit
+              fi
             else
-              echo "  ⚠ Conflict - applying manually"
-              # If there's a conflict, take their version and continue
-              git checkout --theirs .
-              git add -A
-              git cherry-pick --continue --no-edit
+              if git cherry-pick $commit; then
+                echo "  ✓ Success"
+              else
+                echo "  ⚠ Conflict - applying manually"
+                git checkout --theirs .
+                git add -A
+                git cherry-pick --continue --no-edit || git commit --no-edit
+              fi
             fi
           done
           
