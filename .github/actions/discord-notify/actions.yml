@@ -1,0 +1,124 @@
+name: 'Discord Notification'
+description: 'Send standardized Discord notifications for workflow events'
+author: 'Your Name'
+
+inputs:
+  webhook_url:
+    description: 'Discord webhook URL'
+    required: true
+  status:
+    description: 'Build status (success/failure/info/warning)'
+    required: true
+  title:
+    description: 'Notification title'
+    required: true
+  description:
+    description: 'Notification description'
+    required: true
+  commit_sha:
+    description: 'Commit SHA (optional, defaults to current commit)'
+    required: false
+    default: ''
+  image_tag:
+    description: 'Docker image tag (optional)'
+    required: false
+    default: ''
+  include_commit_link:
+    description: 'Include commit SHA in description'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.webhook_url }}" ]; then
+          echo "::warning::Discord webhook URL is empty, skipping notification"
+          exit 0
+        fi
+        
+        VALID_STATUSES="success failure info warning"
+        if [[ ! " $VALID_STATUSES " =~ " ${{ inputs.status }} " ]]; then
+          echo "::error::Invalid status '${{ inputs.status }}'. Must be one of: $VALID_STATUSES"
+          exit 1
+        fi
+    
+    - name: Send notification
+      shell: bash
+      env:
+        WEBHOOK_URL: ${{ inputs.webhook_url }}
+        STATUS: ${{ inputs.status }}
+        TITLE: ${{ inputs.title }}
+        DESCRIPTION: ${{ inputs.description }}
+        COMMIT_SHA: ${{ inputs.commit_sha }}
+        IMAGE_TAG: ${{ inputs.image_tag }}
+        INCLUDE_COMMIT: ${{ inputs.include_commit_link }}
+      run: |
+        # Determine color based on status
+        case "$STATUS" in
+          success)
+            COLOR="3066993"   # Green
+            EMOJI="✅"
+            ;;
+          failure)
+            COLOR="15158332"  # Red
+            EMOJI="❌"
+            ;;
+          warning)
+            COLOR="16776960"  # Yellow
+            EMOJI="⚠️"
+            ;;
+          info|*)
+            COLOR="7506394"   # Blue
+            EMOJI="ℹ️"
+            ;;
+        esac
+        
+        # Build description with optional elements
+        FULL_DESCRIPTION="$DESCRIPTION"
+        
+        # Add commit info if requested
+        if [ "$INCLUDE_COMMIT" == "true" ]; then
+          COMMIT="${COMMIT_SHA:-${{ github.sha }}}"
+          COMMIT_SHORT="${COMMIT:0:7}"
+          FULL_DESCRIPTION="${FULL_DESCRIPTION}\n\n**Commit:** \`${COMMIT_SHORT}\`"
+        fi
+        
+        # Add image tag if provided
+        if [ -n "$IMAGE_TAG" ]; then
+          FULL_DESCRIPTION="${FULL_DESCRIPTION}\n**Image:** \`${IMAGE_TAG}\`"
+        fi
+        
+        # Add workflow run link
+        FULL_DESCRIPTION="${FULL_DESCRIPTION}\n\n[View workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+        
+        # Send notification with error handling
+        HTTP_CODE=$(curl -w "%{http_code}" -o /tmp/discord_response.txt \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"embeds\": [{
+              \"title\": \"${EMOJI} ${TITLE}\",
+              \"description\": \"${FULL_DESCRIPTION}\",
+              \"color\": ${COLOR},
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+              \"footer\": {
+                \"text\": \"${{ github.repository }}\"
+              }
+            }]
+          }" \
+          "$WEBHOOK_URL")
+        
+        # Check response
+        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+          echo "✓ Discord notification sent successfully (HTTP $HTTP_CODE)"
+        else
+          echo "::warning::Discord notification failed (HTTP $HTTP_CODE)"
+          if [ -f /tmp/discord_response.txt ]; then
+            echo "Response: $(cat /tmp/discord_response.txt)"
+          fi
+        fi
+        
+        # Clean up
+        rm -f /tmp/discord_response.txt
