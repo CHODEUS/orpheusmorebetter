@@ -1,18 +1,24 @@
 version: '3.8'
+
 services:
   orpheusmorebetter:
     image: chodeus/orpheusmorebetter:latest
     container_name: orpheusmorebetter
+    hostname: orpheusmorebetter
+    stdin_open: true
+    tty: true
     environment:
       - PUID=99
       - PGID=100
       - UMASK=002
+      - TZ=America/Los_Angeles
     volumes:
       - ./config:/config
       - /path/to/your/flac/files:/data:ro
-      - /path/to/output:/output
       - /path/to/watch/folder:/torrents
-    # Since this is a task runner, not a daemon, you'll typically run it manually
-    # Remove the command below to run interactively
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     command: --help
     restart: "no"
