@@ -1,64 +1,78 @@
 #!/bin/sh
 set -e
 
-# Use defaults if not set (backward compatible)
 PUID=${PUID:-99}
 PGID=${PGID:-100}
 UMASK=${UMASK:-002}
 
-# Function to log with timestamp directly to stderr (unbuffered)
 log() {
     printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >&2
 }
 
-# Visual separator for new container run
 log "═══════════════════════════════════════════════════════"
 log "🔄 Starting OrpheusMoreBetter..."
+
+if [ -f /app/version.txt ]; then
+    VERSION=$(cat /app/version.txt)
+    BRANCH=$(cat /app/branch.txt 2>/dev/null || echo "unknown")
+    log "📦 Version: ${VERSION} (${BRANCH})"
+fi
+
 log "📋 User Configuration: PUID=${PUID} PGID=${PGID} UMASK=${UMASK}"
 
-# Validate PUID/PGID
 if [ "${PUID}" -eq 0 ] 2>/dev/null; then
     log "⚠️  WARNING: Running as root (PUID=0) is not recommended!"
     sleep 2
 fi
 
-# Create group if it doesn't exist
-if ! getent group ${PGID} > /dev/null 2>&1; then
+if ! getent group "${PGID}" > /dev/null 2>&1; then
     log "Creating group with GID ${PGID}"
-    addgroup -g ${PGID} appgroup || {
+    addgroup -g "${PGID}" appgroup || {
         log "❌ Failed to create group with GID ${PGID}"
         exit 1
     }
 fi
+GROUP_NAME=$(getent group "${PGID}" | cut -d: -f1)
 
-GROUP_NAME=$(getent group ${PGID} | cut -d: -f1)
-
-# Create user if it doesn't exist
-if ! getent passwd ${PUID} > /dev/null 2>&1; then
+if ! getent passwd "${PUID}" > /dev/null 2>&1; then
     log "Creating user with UID ${PUID}"
-    adduser -D -u ${PUID} -G ${GROUP_NAME} -h /config appuser || {
+    adduser -D -u "${PUID}" -G "${GROUP_NAME}" -h /config -s /sbin/nologin appuser || {
         log "❌ Failed to create user with UID ${PUID}"
         exit 1
     }
 fi
 
-# Ensure directories exist
-mkdir -p /config /data
+USER_NAME=$(getent passwd "${PUID}" | cut -d: -f1)
 
-# Check if config exists, provide helpful message if not
+mkdir -p /config/.orpheusmorebetter /data /output /torrents
+
+for cmd in flac lame sox mktorrent; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        log "❌ Missing required tool: $cmd"
+        exit 1
+    fi
+done
+
 if [ ! -f /config/.orpheusmorebetter/config ]; then
     log "ℹ️  Config file not found. It will be created on first run."
     log "   Please edit /config/.orpheusmorebetter/config with your credentials."
+else
+    if grep -qE "^username\s*=\s*$" /config/.orpheusmorebetter/config 2>/dev/null; then
+        log "⚠️  Username is empty in config - please add your credentials!"
+    fi
 fi
 
-# Set ownership of application directories
 log "Setting permissions..."
-chown -R ${PUID}:${PGID} /config /output /torrents /app 2>/dev/null || true
+chown -R "${PUID}:${PGID}" /config /output /torrents /app 2>/dev/null || true
 
-# Set umask for the session
-umask ${UMASK}
+umask "${UMASK}"
 
-# Drop privileges and run application with unbuffered Python output
-log "✅ Starting application as UID ${PUID}, GID ${PGID}"
+log "───────────────────────────────────────────────────────"
+log "✅ Starting application as ${USER_NAME} (UID=${PUID}, GID=${PGID})"
+log "───────────────────────────────────────────────────────"
 
-exec su-exec ${PUID}:${PGID} env HOME=/config python3 -u /app/orpheusmorebetter "$@"
+exec su-exec "${PUID}:${PGID}" env \
+    HOME=/config \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    python3 -u /app/orpheusmorebetter "$@"
