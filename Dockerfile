@@ -9,7 +9,6 @@ RUN apk add --no-cache \
     openssl-dev
 
 WORKDIR /build
-
 COPY requirements.txt .
 RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels -r requirements.txt
 
@@ -19,7 +18,6 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /wheels .
 FROM python:3.13-alpine
 
 RUN apk add --no-cache \
-    git \
     mktorrent \
     flac \
     lame \
@@ -28,12 +26,13 @@ RUN apk add --no-cache \
     libxslt \
     openssl \
     shadow \
-    su-exec
+    su-exec \
+    tini \
+    && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 
 COPY --from=builder /wheels /wheels
-
 RUN pip install --no-cache-dir /wheels/* \
     && rm -rf /wheels
 
@@ -45,7 +44,8 @@ ARG GIT_BRANCH=main
 RUN echo "v${VERSION}" > /app/version.txt \
     && echo "${GIT_BRANCH}" > /app/branch.txt
 
-RUN mkdir -p /config /data /output /torrents
+# Simplified: only /config and /data (matches Unraid template)
+RUN mkdir -p /config/.orpheusmorebetter /data
 
 RUN chmod +x /app/orpheusmorebetter /app/start.sh
 
@@ -58,6 +58,11 @@ LABEL org.opencontainers.image.title="OrpheusMoreBetter" \
 ENV PUID=99 \
     PGID=100 \
     UMASK=002 \
-    HOME=/config
+    HOME=/config \
+    PYTHONUNBUFFERED=1
 
+# Document the expected mount points
+VOLUME ["/config", "/data"]
+
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/start.sh"]
